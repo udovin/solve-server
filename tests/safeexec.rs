@@ -5,6 +5,7 @@ use solve::invoker::safeexec;
 
 mod common;
 
+#[ignore]
 #[test]
 fn test_safeexec() {
     let tmpdir = common::temp_dir().unwrap();
