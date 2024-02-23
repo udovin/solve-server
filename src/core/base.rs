@@ -29,6 +29,7 @@ impl Core {
             .overflow_strategy(slog_async::OverflowStrategy::DropAndReport)
             .build()
             .fuse();
+        let drain = drain.filter_level(get_log_level(&config.log_level)).fuse();
         let logger = slog::Logger::root(drain, slog::o!());
         Ok(Self {
             db,
@@ -70,4 +71,15 @@ impl Core {
 /// Awaits future from a blocking function.
 pub fn blocking_await<F: Future>(future: F) -> F::Output {
     tokio::task::block_in_place(|| tokio::runtime::Handle::current().block_on(future))
+}
+
+fn get_log_level(level: &str) -> slog::Level {
+    match level {
+        "debug" => slog::Level::Debug,
+        "info" => slog::Level::Info,
+        "warning" => slog::Level::Warning,
+        "error" => slog::Level::Error,
+        "critical" => slog::Level::Critical,
+        _ => slog::Level::Info,
+    }
 }

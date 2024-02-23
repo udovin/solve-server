@@ -1460,6 +1460,7 @@ dependencies = [
  "async-trait",
  "chrono",
  "clap",
+ "deadpool",
  "deadpool-postgres",
  "futures-util",
  "gtmpl",

@@ -6,8 +6,8 @@ use solve::invoker::safeexec;
 mod common;
 
 #[ignore]
-#[test]
-fn test_safeexec() {
+#[tokio::test]
+async fn test_safeexec() {
     let tmpdir = common::temp_dir().unwrap();
     let alpine_dir = PathBuf::new();
     let manager =
@@ -25,7 +25,7 @@ fn test_safeexec() {
     };
     let mut process = manager.process(config).unwrap();
     process.start().unwrap();
-    let report = process.wait().unwrap();
+    let report = process.wait().await.unwrap();
     assert_eq!(report.exit_code, 0);
     assert!(report.memory > 0);
     assert!(report.time > Duration::ZERO);

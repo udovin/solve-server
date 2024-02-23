@@ -52,7 +52,8 @@ impl Invoker {
                         Ok(Some(task)) => task,
                         Ok(None) => {
                             slog::debug!(logger, "Task queue is empty");
-                            let sleep = tokio::time::timeout(Duration::from_secs(1), shutdown.cancelled());
+                            let delay = Duration::from_millis((800 + rand::random::<u16>() % 400) as u64);
+                            let sleep = tokio::time::timeout(delay, shutdown.cancelled());
                             if let Ok(()) = sleep.await {
                                 break;
                             }

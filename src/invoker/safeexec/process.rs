@@ -1,5 +1,6 @@
-use std::thread::{Builder, JoinHandle};
 use std::time::Duration;
+
+use tokio::task::JoinHandle;
 
 use crate::core::Error;
 
@@ -13,8 +14,6 @@ pub struct Report {
 }
 
 pub struct Process {
-    pub(super) name: String,
-    #[allow(unused)]
     pub(super) config: ProcessConfig,
     pub(super) container: Option<sbox::Container>,
     pub(super) join_handle: Option<JoinHandle<Result<Report, Error>>>,
@@ -36,23 +35,23 @@ impl Process {
                 ..Default::default()
             })
             .map_err(|v| v.to_string())?;
-        let builder = Builder::new().name("safeexec:".to_owned() + &self.name);
         let config = self.config.clone();
-        self.join_handle = Some(builder.spawn(move || Self::run(process, config))?);
+        let future = async move { Self::run(process, config).await };
+        self.join_handle = Some(tokio::task::spawn(future));
         Ok(())
     }
 
-    pub fn wait(&mut self) -> Result<Report, Error> {
+    pub async fn wait(&mut self) -> Result<Report, Error> {
         let join_handle = match self.join_handle.take() {
             Some(v) => v,
             None => return Err("process is not started".into()),
         };
-        join_handle.join().unwrap()
+        join_handle.await.unwrap()
     }
 
     #[allow(unused)]
-    fn run(process: sbox::Process, config: ProcessConfig) -> Result<Report, Error> {
-        let status = process.wait(None)?;
+    async fn run(process: sbox::Process, config: ProcessConfig) -> Result<Report, Error> {
+        let status = tokio::task::block_in_place(|| process.wait(None))?;
         todo!()
     }
 }

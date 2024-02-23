@@ -58,6 +58,60 @@ impl<'a> RowsBackend<'a> for WrapRows<'a> {
     }
 }
 
+#[derive(Default)]
+pub(super) struct WrapQueryBuilder {
+    query: String,
+    values: Vec<Value>,
+}
+
+impl QueryBuilderBackend for WrapQueryBuilder {
+    fn push(&mut self, ch: char) {
+        self.query.push(ch);
+    }
+
+    fn push_str(&mut self, part: &str) {
+        self.query.push_str(part);
+    }
+
+    fn push_name(&mut self, name: &str) {
+        assert!(name.find(|c| c == '"' || c == '\\').is_none());
+        self.push('"');
+        self.push_str(name);
+        self.push('"');
+    }
+
+    fn push_value(&mut self, value: Value) {
+        self.values.push(value);
+        self.push_str(format!("${}", self.values.len()).as_str())
+    }
+
+    fn build(self: Box<Self>) -> RawQuery {
+        RawQuery::new(self.query, self.values)
+    }
+}
+
+pub(super) struct Manager {
+    path: String,
+}
+
+#[async_trait::async_trait]
+impl deadpool::managed::Manager for Manager {
+    type Type = tokio_sqlite::Connection;
+    type Error = Error;
+
+    async fn create(&self) -> Result<tokio_sqlite::Connection, Error> {
+        Ok(tokio_sqlite::Connection::open(&self.path).await?)
+    }
+
+    async fn recycle(
+        &self,
+        _: &mut tokio_sqlite::Connection,
+        _: &deadpool::managed::Metrics,
+    ) -> deadpool::managed::RecycleResult<Error> {
+        Ok(())
+    }
+}
+
 struct WrapTransaction<'a>(tokio_sqlite::Transaction<'a>);
 
 #[async_trait::async_trait]
@@ -94,7 +148,7 @@ impl<'a> TransactionBackend<'a> for WrapTransaction<'a> {
     }
 }
 
-struct WrapConnection(tokio_sqlite::Connection);
+struct WrapConnection(deadpool::managed::Object<Manager>);
 
 #[async_trait::async_trait]
 impl ConnectionBackend for WrapConnection {
@@ -127,45 +181,15 @@ impl ConnectionBackend for WrapConnection {
     }
 }
 
-#[derive(Default)]
-pub(super) struct WrapQueryBuilder {
-    query: String,
-    values: Vec<Value>,
-}
-
-impl QueryBuilderBackend for WrapQueryBuilder {
-    fn push(&mut self, ch: char) {
-        self.query.push(ch);
-    }
-
-    fn push_str(&mut self, part: &str) {
-        self.query.push_str(part);
-    }
-
-    fn push_name(&mut self, name: &str) {
-        assert!(name.find(|c| c == '"' || c == '\\').is_none());
-        self.push('"');
-        self.push_str(name);
-        self.push('"');
-    }
-
-    fn push_value(&mut self, value: Value) {
-        self.values.push(value);
-        self.push_str(format!("${}", self.values.len()).as_str())
-    }
-
-    fn build(self: Box<Self>) -> RawQuery {
-        RawQuery::new(self.query, self.values)
-    }
-}
-
-pub(super) struct WrapDatabase {
-    path: String,
-}
+pub(super) struct WrapDatabase(deadpool::managed::Pool<Manager>);
 
 impl WrapDatabase {
     pub fn new(path: String) -> Self {
-        Self { path }
+        Self(
+            deadpool::managed::Pool::builder(Manager { path })
+                .build()
+                .unwrap(),
+        )
     }
 }
 
@@ -176,7 +200,10 @@ impl DatabaseBackend for WrapDatabase {
     }
 
     async fn connection(&self, _options: ConnectionOptions) -> Result<Connection, Error> {
-        let conn = tokio_sqlite::Connection::open(self.path.clone()).await?;
+        let conn = match self.0.get().await {
+            Ok(v) => v,
+            Err(err) => return Err(err.to_string().into()),
+        };
         Ok(WrapConnection(conn).into())
     }
 }

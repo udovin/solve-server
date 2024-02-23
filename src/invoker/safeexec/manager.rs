@@ -63,7 +63,7 @@ impl Manager {
         let container = self
             .manager
             .create_container(
-                name.clone(),
+                format!("safeexec-{name}"),
                 sbox::ContainerConfig {
                     layers: config.layers.clone(),
                     hostname: "safeexec".into(),
@@ -72,7 +72,6 @@ impl Manager {
             )
             .map_err(|v| v.to_string())?;
         Ok(Process {
-            name,
             config,
             container: Some(container),
             join_handle: None,
