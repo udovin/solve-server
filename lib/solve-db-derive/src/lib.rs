@@ -28,7 +28,7 @@ pub fn derive_from_row(input: TokenStream) -> TokenStream {
         }
         _ => TokenStream::from(syn::Error::new_spanned(
             input,
-            "Only structs with named fields can derive `FromRow",
+            "Only structs with named fields can derive `FromRow`",
         ).to_compile_error()),
     }
 }
@@ -59,7 +59,7 @@ pub fn derive_into_row(input: TokenStream) -> TokenStream {
         }
         _ => TokenStream::from(syn::Error::new_spanned(
             input,
-            "Only structs with named fields can derive `FromRow",
+            "Only structs with named fields can derive `IntoRow`",
         ).to_compile_error()),
     }
 }
