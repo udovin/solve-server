@@ -25,3 +25,5 @@ tokio-postgres-rustls = "0.10.0"
 tokio-sqlite = "0.1.1"
 tokio-util = "0.7.10"
 warp = "0.3.6"
+
+solve-db-derive = { path = "lib/solve-db-derive" }

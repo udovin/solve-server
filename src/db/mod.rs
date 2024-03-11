@@ -9,3 +9,6 @@ mod value;
 pub use base::*;
 pub use query::*;
 pub use value::*;
+
+pub use solve_db_derive::FromRow;
+pub use builder::IntoRow;

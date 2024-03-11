@@ -1,8 +1,7 @@
 use std::sync::Arc;
 
 use crate::core::Error;
-use crate::db::builder::IntoRow;
-use crate::db::{Database, FromRow, Row, Value};
+use crate::db::{Database, FromRow, IntoRow, Row, Value};
 
 use super::types::Instant;
 use super::{object_store_impl, BaseEvent, Object, PersistentStore, JSON};
@@ -39,37 +38,13 @@ impl From<FileStatus> for Value {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, FromRow, IntoRow)]
 pub struct File {
     pub id: i64,
     pub status: FileStatus,
     pub expire_time: Option<Instant>,
     pub path: String,
     pub meta: JSON,
-}
-
-impl FromRow for File {
-    fn from_row(row: &Row) -> Result<Self, Error> {
-        Ok(Self {
-            id: row.get(Self::ID)?.try_into()?,
-            status: row.get("status")?.try_into()?,
-            expire_time: row.get("expire_time")?.try_into()?,
-            path: row.get("path")?.try_into()?,
-            meta: row.get("meta")?.try_into()?,
-        })
-    }
-}
-
-impl IntoRow for File {
-    fn into_row(self) -> Vec<(String, Value)> {
-        vec![
-            (Self::ID.into(), self.id.into()),
-            ("status".into(), self.status.into()),
-            ("expire_time".into(), self.expire_time.into()),
-            ("path".into(), self.path.into()),
-            ("meta".into(), self.meta.into()),
-        ]
-    }
 }
 
 impl Object for File {

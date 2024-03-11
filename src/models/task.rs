@@ -3,8 +3,8 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::core::Error;
-use crate::db::builder::{column, IntoRow, Select};
-use crate::db::{Database, FromRow, Row, Value};
+use crate::db::builder::{column, Select};
+use crate::db::{Database, FromRow, IntoRow, Row, Value};
 use crate::models::{write_tx_options, AsyncIter, Context, ObjectStore};
 
 use super::types::Instant;
@@ -98,7 +98,7 @@ impl From<TaskStatus> for Value {
     }
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone, Default, FromRow, IntoRow)]
 pub struct Task {
     pub id: i64,
     pub kind: TaskKind,
@@ -106,32 +106,6 @@ pub struct Task {
     pub status: TaskStatus,
     pub state: JSON,
     pub expire_time: Option<Instant>,
-}
-
-impl FromRow for Task {
-    fn from_row(row: &Row) -> Result<Self, Error> {
-        Ok(Self {
-            id: row.get(Self::ID)?.try_into()?,
-            kind: row.get("kind")?.try_into()?,
-            config: row.get("config")?.try_into()?,
-            status: row.get("status")?.try_into()?,
-            state: row.get("state")?.try_into()?,
-            expire_time: row.get("expire_time")?.try_into()?,
-        })
-    }
-}
-
-impl IntoRow for Task {
-    fn into_row(self) -> Vec<(String, Value)> {
-        vec![
-            (Self::ID.into(), self.id.into()),
-            ("kind".into(), self.kind.into()),
-            ("config".into(), self.config.into()),
-            ("status".into(), self.status.into()),
-            ("state".into(), self.state.into()),
-            ("expire_time".into(), self.expire_time.into()),
-        ]
-    }
 }
 
 impl Object for Task {
