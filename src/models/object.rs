@@ -64,35 +64,22 @@ pub trait Event: FromRow + IntoRow + Default + Clone + Send + Sync + 'static {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq, Value)]
 #[repr(i8)]
 pub enum EventKind {
-    Create,
-    Delete,
-    Update,
+    Create = 1,
+    Delete = 2,
+    Update = 3,
     Unknown(i8),
 }
 
-impl TryFrom<Value> for EventKind {
-    type Error = Error;
-
-    fn try_from(value: Value) -> Result<Self, Error> {
-        match value.try_into()? {
-            1 => Ok(Self::Create),
-            2 => Ok(Self::Delete),
-            3 => Ok(Self::Update),
-            v => Ok(Self::Unknown(v.try_into()?)),
-        }
-    }
-}
-
-impl From<EventKind> for Value {
-    fn from(value: EventKind) -> Self {
-        match value {
-            EventKind::Create => 1,
-            EventKind::Delete => 2,
-            EventKind::Update => 3,
-            EventKind::Unknown(v) => v.into(),
+impl ToString for EventKind {  
+    fn to_string(&self) -> String {
+        match self {
+            EventKind::Create => "create",
+            EventKind::Delete => "delete",
+            EventKind::Update => "update",
+            EventKind::Unknown(_) => "unknown",
         }
         .into()
     }
@@ -149,10 +136,10 @@ impl<O: Object> Default for BaseEvent<O> {
 impl<O: Object> FromRow for BaseEvent<O> {
     fn from_row(row: &Row) -> Result<Self, Error> {
         Ok(Self {
-            id: row.get(Self::ID)?.try_into()?,
-            time: row.get("event_time")?.try_into()?,
-            account_id: row.get("event_account_id")?.try_into()?,
-            kind: row.get("event_kind")?.try_into()?,
+            id: row.get(Self::ID).ok_or("unknown field")?.clone().try_into()?,
+            time: row.get("event_time").ok_or("unknown field")?.clone().try_into()?,
+            account_id: row.get("event_account_id").ok_or("unknown field")?.clone().try_into()?,
+            kind: row.get("event_kind").ok_or("unknown field")?.clone().try_into()?,
             object: FromRow::from_row(row)?,
         })
     }

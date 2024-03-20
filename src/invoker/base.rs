@@ -65,7 +65,7 @@ impl Invoker {
                         }
                     };
                     let logger = logger
-                        .new(slog::o!("task_id" => task.id, "kind" => task.kind));
+                        .new(slog::o!("task_id" => task.id, "kind" => task.kind.to_string()));
                     if let Err(err) = self.run_task(task, logger.clone()).await {
                         slog::error!(logger, "Task failed"; "error" => err.to_string());
                     } else {

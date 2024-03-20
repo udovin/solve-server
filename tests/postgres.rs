@@ -17,13 +17,13 @@ struct TestTypesRow {
 impl FromRow for TestTypesRow {
     fn from_row(row: &Row) -> Result<Self, Error> {
         Ok(Self {
-            id: row.get("id")?.try_into()?,
-            int64: row.get("int64")?.try_into()?,
-            null_int64: row.get("null_int64")?.try_into()?,
-            string: row.get("string")?.try_into()?,
-            null_string: row.get("null_string")?.try_into()?,
-            json: row.get("json")?.try_into()?,
-            null_json: row.get("null_json")?.try_into()?,
+            id: row.get("id").ok_or("unknown field")?.clone().try_into()?,
+            int64: row.get("int64").ok_or("unknown field")?.clone().try_into()?,
+            null_int64: row.get("null_int64").ok_or("unknown field")?.clone().try_into()?,
+            string: row.get("string").ok_or("unknown field")?.clone().try_into()?,
+            null_string: row.get("null_string").ok_or("unknown field")?.clone().try_into()?,
+            json: row.get("json").ok_or("unknown field")?.clone().try_into()?,
+            null_json: row.get("null_json").ok_or("unknown field")?.clone().try_into()?,
         })
     }
 }
@@ -44,14 +44,17 @@ impl IntoRow for TestTypesRow {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_postgres() {
+    let host = match std::env::var("POSTGRES_HOST") {
+        Ok(v) => v,
+        Err(_) => return,
+    };
+    let port = match std::env::var("POSTGRES_PORT") {
+        Ok(v) => v,
+        Err(_) => return,
+    };
     let config = solve::config::PostgresConfig {
         user: std::env::var("POSTGRES_USER").unwrap_or("postgres".into()),
-        hosts: vec![format!(
-            "{}:{}",
-            std::env::var("POSTGRES_HOST").unwrap_or("127.0.0.1".into()),
-            std::env::var("POSTGRES_PORT").unwrap_or("5432".into())
-        )
-        .into()],
+        hosts: vec![format!("{host}:{port}").into()],
         password: std::env::var("POSTGRES_PASSWORD").unwrap_or("postgres".into()),
         name: std::env::var("POSTGRES_NAME").unwrap_or("postgres".into()),
         sslmode: "".into(),
@@ -143,29 +146,29 @@ async fn test_postgres() {
             .unwrap();
         {
             let row = rows.next().await.unwrap().unwrap();
-            assert_eq!(row.get(0).unwrap(), Value::BigInt(1));
-            assert_eq!(row.get(1).unwrap(), Value::BigInt(1));
-            assert_eq!(row.get(2).unwrap(), Value::Null);
-            assert_eq!(row.get(3).unwrap(), Value::Text("2".into()));
-            assert_eq!(row.get(4).unwrap(), Value::Null);
-            assert_eq!(row.get(5).unwrap(), Value::Blob("3".into()));
-            assert_eq!(row.get(6).unwrap(), Value::Null);
-            assert_eq!(row.get(7).unwrap(), Value::Blob("4".into()));
-            assert_eq!(row.get(8).unwrap(), Value::Null);
-            assert_eq!(row.get(9).unwrap(), Value::BigInt(5));
+            assert_eq!(row.get(0).unwrap().clone(), Value::BigInt(1));
+            assert_eq!(row.get(1).unwrap().clone(), Value::BigInt(1));
+            assert_eq!(row.get(2).unwrap().clone(), Value::Null);
+            assert_eq!(row.get(3).unwrap().clone(), Value::Text("2".into()));
+            assert_eq!(row.get(4).unwrap().clone(), Value::Null);
+            assert_eq!(row.get(5).unwrap().clone(), Value::Blob("3".into()));
+            assert_eq!(row.get(6).unwrap().clone(), Value::Null);
+            assert_eq!(row.get(7).unwrap().clone(), Value::Blob("4".into()));
+            assert_eq!(row.get(8).unwrap().clone(), Value::Null);
+            assert_eq!(row.get(9).unwrap().clone(), Value::BigInt(5));
         }
         {
             let row = rows.next().await.unwrap().unwrap();
-            assert_eq!(row.get(0).unwrap(), Value::BigInt(2));
-            assert_eq!(row.get(1).unwrap(), Value::BigInt(2));
-            assert_eq!(row.get(2).unwrap(), Value::BigInt(3));
-            assert_eq!(row.get(3).unwrap(), Value::Text("4".into()));
-            assert_eq!(row.get(4).unwrap(), Value::Text("5".into()));
-            assert_eq!(row.get(5).unwrap(), Value::Blob("6".into()));
-            assert_eq!(row.get(6).unwrap(), Value::Blob("7".into()));
-            assert_eq!(row.get(7).unwrap(), Value::Blob("8".into()));
-            assert_eq!(row.get(8).unwrap(), Value::Blob("9".into()));
-            assert_eq!(row.get(9).unwrap(), Value::BigInt(10));
+            assert_eq!(row.get(0).unwrap().clone(), Value::BigInt(2));
+            assert_eq!(row.get(1).unwrap().clone(), Value::BigInt(2));
+            assert_eq!(row.get(2).unwrap().clone(), Value::BigInt(3));
+            assert_eq!(row.get(3).unwrap().clone(), Value::Text("4".into()));
+            assert_eq!(row.get(4).unwrap().clone(), Value::Text("5".into()));
+            assert_eq!(row.get(5).unwrap().clone(), Value::Blob("6".into()));
+            assert_eq!(row.get(6).unwrap().clone(), Value::Blob("7".into()));
+            assert_eq!(row.get(7).unwrap().clone(), Value::Blob("8".into()));
+            assert_eq!(row.get(8).unwrap().clone(), Value::Blob("9".into()));
+            assert_eq!(row.get(9).unwrap().clone(), Value::BigInt(10));
         }
         assert!(rows.next().await.is_none());
     }

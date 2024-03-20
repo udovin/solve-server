@@ -1,11 +1,68 @@
 use std::sync::Arc;
 
-use solve::db::{new_database, Database, TransactionOptions};
+use solve::db::{new_database, Database, TransactionOptions, Value};
 use solve::models::{
-    now, Context, Event, EventKind, File, FileStatus, FileStore, ObjectStore, Task, TaskStore,
+    now, Context, Event, EventKind, File, FileStatus, FileStore, ObjectStore, Task, TaskKind, TaskStatus, TaskStore
 };
 
 mod common;
+
+#[test]
+fn test_event_kinds() {
+    assert_eq!(EventKind::try_from(Value::BigInt(1)).unwrap(), EventKind::Create);
+    assert_eq!(Value::from(EventKind::Create), Value::BigInt(1));
+
+    assert_eq!(EventKind::try_from(Value::BigInt(2)).unwrap(), EventKind::Delete);
+    assert_eq!(Value::from(EventKind::Delete), Value::BigInt(2));
+
+    assert_eq!(EventKind::try_from(Value::BigInt(3)).unwrap(), EventKind::Update);
+    assert_eq!(Value::from(EventKind::Update), Value::BigInt(3));
+
+    assert_eq!(EventKind::try_from(Value::BigInt(4)).unwrap(), EventKind::Unknown(4));
+    assert_eq!(Value::from(EventKind::Unknown(4)), Value::BigInt(4));
+}
+
+#[test]
+fn test_file_statuses() {
+    assert_eq!(FileStatus::try_from(Value::BigInt(0)).unwrap(), FileStatus::Pending);
+    assert_eq!(Value::from(FileStatus::Pending), Value::BigInt(0));
+
+    assert_eq!(FileStatus::try_from(Value::BigInt(1)).unwrap(), FileStatus::Available);
+    assert_eq!(Value::from(FileStatus::Available), Value::BigInt(1));
+
+    assert_eq!(FileStatus::try_from(Value::BigInt(2)).unwrap(), FileStatus::Unknown(2));
+    assert_eq!(Value::from(FileStatus::Unknown(2)), Value::BigInt(2));
+}
+
+#[test]
+fn test_task_kinds() {
+    assert_eq!(TaskKind::try_from(Value::BigInt(1)).unwrap(), TaskKind::JudgeSolution);
+    assert_eq!(Value::from(TaskKind::JudgeSolution), Value::BigInt(1));
+
+    assert_eq!(TaskKind::try_from(Value::BigInt(2)).unwrap(), TaskKind::UpdateProblemPackage);
+    assert_eq!(Value::from(TaskKind::UpdateProblemPackage), Value::BigInt(2));
+
+    assert_eq!(TaskKind::try_from(Value::BigInt(3)).unwrap(), TaskKind::Unknown(3));
+    assert_eq!(Value::from(TaskKind::Unknown(3)), Value::BigInt(3));
+}
+
+#[test]
+fn test_task_statuses() {
+    assert_eq!(TaskStatus::try_from(Value::BigInt(0)).unwrap(), TaskStatus::Queued);
+    assert_eq!(Value::from(TaskStatus::Queued), Value::BigInt(0));
+
+    assert_eq!(TaskStatus::try_from(Value::BigInt(1)).unwrap(), TaskStatus::Running);
+    assert_eq!(Value::from(TaskStatus::Running), Value::BigInt(1));
+
+    assert_eq!(TaskStatus::try_from(Value::BigInt(2)).unwrap(), TaskStatus::Succeeded);
+    assert_eq!(Value::from(TaskStatus::Succeeded), Value::BigInt(2));
+
+    assert_eq!(TaskStatus::try_from(Value::BigInt(3)).unwrap(), TaskStatus::Failed);
+    assert_eq!(Value::from(TaskStatus::Failed), Value::BigInt(3));
+
+    assert_eq!(TaskStatus::try_from(Value::BigInt(4)).unwrap(), TaskStatus::Unknown(4));
+    assert_eq!(Value::from(TaskStatus::Unknown(4)), Value::BigInt(4));
+}
 
 #[tokio::test(flavor = "multi_thread")]
 async fn test_file_store() {

@@ -1,4 +1,4 @@
-use crate::core::Error;
+use crate::{core::Error, db::Row};
 use crate::db::builder::Select;
 use crate::db::Transaction;
 
@@ -70,7 +70,7 @@ pub trait ObjectStore: Send {
         &self,
         ctx: Context<'_, '_>,
         object: Self::Object,
-        from_object: Self::Object,
+        from_row: Row,
     ) -> Result<Self::Event, Error>;
 
     async fn delete(&self, ctx: Context<'_, '_>, id: Self::Id) -> Result<Self::Event, Error>;

@@ -31,13 +31,13 @@ async fn test_any_sqlite() {
         .unwrap();
     assert_eq!(rows.columns(), vec!["a", "b"]);
     let row = rows.next().await.unwrap().unwrap();
-    assert_eq!(row.get(0).unwrap(), Value::BigInt(1));
-    assert_eq!(row.get(1).unwrap(), Value::Text("test1".into()));
-    assert_eq!(row.get("a").unwrap(), Value::BigInt(1));
-    assert_eq!(row.get("b").unwrap(), Value::Text("test1".into()));
+    assert_eq!(row.get(0).unwrap().clone(), Value::BigInt(1));
+    assert_eq!(row.get(1).unwrap().clone(), Value::Text("test1".into()));
+    assert_eq!(row.get("a").unwrap().clone(), Value::BigInt(1));
+    assert_eq!(row.get("b").unwrap().clone(), Value::Text("test1".into()));
     let row = rows.next().await.unwrap().unwrap();
-    assert_eq!(row.get(0).unwrap(), Value::BigInt(2));
-    assert_eq!(row.get(1).unwrap(), Value::Text("test2".into()));
+    assert_eq!(row.get(0).unwrap().clone(), Value::BigInt(2));
+    assert_eq!(row.get(1).unwrap().clone(), Value::Text("test2".into()));
     assert!(rows.next().await.is_none());
     // Check commit.
     let mut tx = db.transaction(Default::default()).await.unwrap();
@@ -47,7 +47,7 @@ async fn test_any_sqlite() {
     tx.commit().await.unwrap();
     let mut rows = db.query("SELECT COUNT(*) FROM test_tbl").await.unwrap();
     let row = rows.next().await.unwrap().unwrap();
-    assert_eq!(row.get(0).unwrap(), Value::BigInt(3));
+    assert_eq!(row.get(0).unwrap().clone(), Value::BigInt(3));
     // Check rollback.
     let mut tx = db.transaction(Default::default()).await.unwrap();
     tx.execute("INSERT INTO test_tbl (b) VALUES ('test3')")
@@ -56,7 +56,7 @@ async fn test_any_sqlite() {
     tx.rollback().await.unwrap();
     let mut rows = db.query("SELECT COUNT(*) FROM test_tbl").await.unwrap();
     let row = rows.next().await.unwrap().unwrap();
-    assert_eq!(row.get(0).unwrap(), Value::BigInt(3));
+    assert_eq!(row.get(0).unwrap().clone(), Value::BigInt(3));
     // Check drop.
     let mut tx = db.transaction(Default::default()).await.unwrap();
     tx.execute("INSERT INTO test_tbl (b) VALUES ('test3')")
@@ -65,7 +65,7 @@ async fn test_any_sqlite() {
     drop(tx);
     let mut rows = db.query("SELECT COUNT(*) FROM test_tbl").await.unwrap();
     let row = rows.next().await.unwrap().unwrap();
-    assert_eq!(row.get(0).unwrap(), Value::BigInt(3));
+    assert_eq!(row.get(0).unwrap().clone(), Value::BigInt(3));
     // Check uncommited.
     let mut tx = db.transaction(Default::default()).await.unwrap();
     tx.execute("INSERT INTO test_tbl (b) VALUES ('test3')")
@@ -73,5 +73,5 @@ async fn test_any_sqlite() {
         .unwrap();
     let mut rows = tx.query("SELECT COUNT(*) FROM test_tbl").await.unwrap();
     let row = rows.next().await.unwrap().unwrap();
-    assert_eq!(row.get(0).unwrap(), Value::BigInt(4));
+    assert_eq!(row.get(0).unwrap().clone(), Value::BigInt(4));
 }

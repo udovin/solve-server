@@ -6,39 +6,27 @@ use crate::db::{Database, FromRow, IntoRow, Row, Value};
 use super::types::Instant;
 use super::{object_store_impl, BaseEvent, Object, PersistentStore, JSON};
 
-#[derive(Clone, Copy, Default, Debug, PartialEq)]
-#[repr(i64)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Value)]
+#[repr(i8)]
 pub enum FileStatus {
     #[default]
     Pending = 0,
     Available = 1,
-    Unknown(i64),
+    Unknown(i8),
 }
 
-impl TryFrom<Value> for FileStatus {
-    type Error = Error;
-
-    fn try_from(value: Value) -> Result<Self, Error> {
-        Ok(match value.try_into()? {
-            0 => Self::Pending,
-            1 => Self::Available,
-            v => Self::Unknown(v),
-        })
-    }
-}
-
-impl From<FileStatus> for Value {
-    fn from(value: FileStatus) -> Self {
-        match value {
-            FileStatus::Pending => 0,
-            FileStatus::Available => 1,
-            FileStatus::Unknown(v) => v,
+impl ToString for FileStatus {  
+    fn to_string(&self) -> String {
+        match self {
+            FileStatus::Pending => "pending",
+            FileStatus::Available => "available",
+            FileStatus::Unknown(_) => "unknown",
         }
         .into()
     }
 }
 
-#[derive(Clone, Default, FromRow, IntoRow)]
+#[derive(Clone, Default, Debug, FromRow, IntoRow)]
 pub struct File {
     pub id: i64,
     pub status: FileStatus,

@@ -2,7 +2,7 @@ use std::{marker::PhantomData, sync::Arc};
 
 use crate::core::Error;
 use crate::db::builder::{column, Delete, Insert, IntoRow, Select, Update};
-use crate::db::{Database, Executor, FromRow, IsolationLevel, Rows, TransactionOptions};
+use crate::db::{Database, Executor, FromRow, IsolationLevel, Row, Rows, TransactionOptions};
 
 use super::{AsyncIter, BaseEvent, Context, Event, EventKind, Object, ObjectStore};
 
@@ -61,7 +61,7 @@ impl<O: Object> PersistentStore<O> {
         &self,
         tx: &mut impl Executor<'_>,
         object: O,
-        from_object: Option<O>,
+        from_row: Option<Row>,
     ) -> Result<O, Error> {
         assert!(object.is_valid());
         let id = object.id();
@@ -70,13 +70,12 @@ impl<O: Object> PersistentStore<O> {
             .into_iter()
             .filter(|v| v.0 != O::ID)
             .collect();
-        let predicate = match from_object {
+        let predicate = match from_row {
             Some(v) => v
-                .into_row()
-                .into_iter()
+                .iter()
                 .filter(|v| v.0 != O::ID)
                 .fold(column(O::ID).equal(id), |p, v| {
-                    p.and(column(v.0).equal(v.1))
+                    p.and(column(v.0).equal(v.1.clone()))
                 }),
             None => column(O::ID).equal(id),
         };
@@ -137,13 +136,19 @@ pub fn write_tx_options() -> TransactionOptions {
     }
 }
 
-pub struct RowIter<'a, T> {
+pub struct RowsIter<'a, T> {
     rows: Rows<'a>,
     _phantom: PhantomData<T>,
 }
 
+impl<'a, T> RowsIter<'a, T> {
+    pub fn into_raw(self) -> Rows<'a> {
+        self.rows
+    }
+}
+
 #[async_trait::async_trait]
-impl<'a, T: Send + FromRow> AsyncIter<'a> for RowIter<'a, T> {
+impl<'a, T: Send + FromRow> AsyncIter<'a> for RowsIter<'a, T> {
     type Item = T;
 
     async fn next(&mut self) -> Option<Result<Self::Item, Error>> {
@@ -160,7 +165,7 @@ impl<O: Object> ObjectStore for PersistentStore<O> {
     type Id = O::Id;
     type Object = O;
     type Event = BaseEvent<O>;
-    type FindIter<'a> = RowIter<'a, O>;
+    type FindIter<'a> = RowsIter<'a, O>;
 
     async fn find<'a>(
         &'a self,
@@ -176,7 +181,7 @@ impl<O: Object> ObjectStore for PersistentStore<O> {
         } else {
             self.db.query(query).await?
         };
-        Ok(RowIter {
+        Ok(RowsIter {
             rows,
             _phantom: PhantomData,
         })
@@ -210,16 +215,16 @@ impl<O: Object> ObjectStore for PersistentStore<O> {
         &self,
         mut ctx: Context<'_, '_>,
         object: Self::Object,
-        from_object: Self::Object,
+        from_row: Row,
     ) -> Result<Self::Event, Error> {
         if let Some(tx) = ctx.tx.take() {
-            let object = self.update_object(tx, object, Some(from_object)).await?;
+            let object = self.update_object(tx, object, Some(from_row)).await?;
             let event = self.create_event(tx, BaseEvent::update(object)).await?;
             return Ok(event);
         }
         let mut tx = self.db.transaction(write_tx_options()).await?;
         let event = self
-            .update_from(ctx.with_tx(&mut tx), object, from_object)
+            .update_from(ctx.with_tx(&mut tx), object, from_row)
             .await?;
         tx.commit().await?;
         Ok(event)
@@ -245,7 +250,7 @@ macro_rules! object_store_impl {
             type Id = i64;
             type Object = $object;
             type Event = $event;
-            type FindIter<'a> = $crate::models::RowIter<'a, $object>;
+            type FindIter<'a> = $crate::models::RowsIter<'a, $object>;
 
             async fn find<'a>(
                 &'a self,
@@ -275,9 +280,9 @@ macro_rules! object_store_impl {
                 &self,
                 ctx: $crate::models::Context<'_, '_>,
                 object: Self::Object,
-                from_object: Self::Object,
+                from_row: $crate::db::Row,
             ) -> std::result::Result<Self::Event, $crate::core::Error> {
-                self.0.update_from(ctx, object, from_object).await
+                self.0.update_from(ctx, object, from_row).await
             }
 
             async fn delete(

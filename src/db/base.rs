@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{hash_map, HashMap};
 use std::sync::Arc;
 
 use crate::config::DatabaseConfig;
@@ -6,35 +6,8 @@ use crate::core::Error;
 
 use super::{postgres, sqlite, IntoQuery, Query, QueryBuilder, Value};
 
-pub trait ColumnIndex {
-    fn index(&self, row: &Row) -> Result<usize, Error>;
-}
-
-impl ColumnIndex for usize {
-    fn index(&self, row: &Row) -> Result<usize, Error> {
-        if *self < row.values.len() {
-            return Ok(*self);
-        }
-        Err(format!("column out of range: {} >= {}", self, row.values.len()).into())
-    }
-}
-
-impl ColumnIndex for String {
-    fn index(&self, row: &Row) -> Result<usize, Error> {
-        row.columns
-            .get(self)
-            .copied()
-            .ok_or(format!("unknown column name: {}", self).into())
-    }
-}
-
-impl ColumnIndex for &str {
-    fn index(&self, row: &Row) -> Result<usize, Error> {
-        row.columns
-            .get(*self)
-            .copied()
-            .ok_or(format!("unknown column name: {}", *self).into())
-    }
+pub trait RowIndex<T> {
+    fn index(&self, index: T) -> Option<usize>;
 }
 
 #[derive(Clone, Debug)]
@@ -49,9 +22,12 @@ impl Row {
         Self { values, columns }
     }
 
-    pub fn get<I: ColumnIndex>(&self, index: I) -> Result<Value, Error> {
-        let index = index.index(self)?;
-        Ok(self.values.get(index).unwrap().clone())
+    pub fn get<I>(&self, index: I) -> Option<&Value>
+    where 
+        Self: RowIndex<I>
+    {
+        let index = self.index(index)?;
+        self.values.get(index)
     }
 
     pub fn len(&self) -> usize {
@@ -60,6 +36,52 @@ impl Row {
 
     pub fn is_empty(&self) -> bool {
         self.values.is_empty()
+    }
+
+    pub fn iter(&self) -> RowIter<'_> {
+        RowIter {
+            iter: self.columns.iter(),
+            values: &self.values,
+        }
+    }
+
+    pub fn from_iter<I: Iterator<Item = (String, Value)>>(iter: I) -> Row {
+        let (columns, values): (Vec<_>, _) = iter.unzip();
+        Row {
+            values,
+            columns: Arc::new(HashMap::from_iter(columns.into_iter().enumerate().map(|(i, v)| (v, i)))),
+        }
+    }
+}
+
+pub struct RowIter<'a> {
+    iter: hash_map::Iter<'a, String, usize>,
+    values: &'a [Value],
+}
+
+impl<'a> Iterator for RowIter<'a> {
+    type Item = (&'a str, &'a Value);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let (column, index) = self.iter.next()?;
+        let value = self.values.get(*index)?;
+        Some((column.as_str(), value))
+    }
+}
+
+impl RowIndex<usize> for Row {
+    fn index(&self, index: usize) -> Option<usize> {
+        if index < self.values.len() {
+            Some(index)
+        } else {
+            None
+        }
+    }
+}
+
+impl RowIndex<&str> for Row {
+    fn index(&self, index: &str) -> Option<usize> {
+        self.columns.get(index).copied()
     }
 }
 

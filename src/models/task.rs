@@ -5,62 +5,32 @@ use std::time::Duration;
 use crate::core::Error;
 use crate::db::builder::{column, Select};
 use crate::db::{Database, FromRow, IntoRow, Row, Value};
-use crate::models::{write_tx_options, AsyncIter, Context, ObjectStore};
+use crate::models::{write_tx_options, Context, ObjectStore};
 
 use super::types::Instant;
 use super::{now, object_store_impl, BaseEvent, Event, Object, PersistentStore, JSON};
 
-#[derive(Clone, Copy, Default)]
-#[repr(i64)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Value)]
+#[repr(i8)]
 pub enum TaskKind {
     #[default]
     JudgeSolution = 1,
     UpdateProblemPackage = 2,
-    Unknown(i64),
+    Unknown(i8),
 }
 
-impl TryFrom<Value> for TaskKind {
-    type Error = Error;
-
-    fn try_from(value: Value) -> Result<Self, Error> {
-        Ok(match value.try_into()? {
-            1 => Self::JudgeSolution,
-            2 => Self::UpdateProblemPackage,
-            v => Self::Unknown(v),
-        })
-    }
-}
-
-impl From<TaskKind> for Value {
-    fn from(value: TaskKind) -> Self {
-        match value {
-            TaskKind::JudgeSolution => 1,
-            TaskKind::UpdateProblemPackage => 2,
-            TaskKind::Unknown(v) => v,
+impl ToString for TaskKind {  
+    fn to_string(&self) -> String {
+        match self {
+            TaskKind::JudgeSolution => "judge_solution",
+            TaskKind::UpdateProblemPackage => "update_problem_package",
+            TaskKind::Unknown(_) => "unknown",
         }
         .into()
     }
 }
 
-impl slog::Value for TaskKind {
-    fn serialize(
-        &self,
-        _record: &slog::Record,
-        key: slog::Key,
-        serializer: &mut dyn slog::Serializer,
-    ) -> slog::Result {
-        serializer.emit_str(
-            key,
-            match self {
-                TaskKind::JudgeSolution => "judge_solution",
-                TaskKind::UpdateProblemPackage => "update_problem_package",
-                TaskKind::Unknown(_) => "unknown",
-            },
-        )
-    }
-}
-
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Value)]
 #[repr(i64)]
 pub enum TaskStatus {
     #[default]
@@ -71,34 +41,7 @@ pub enum TaskStatus {
     Unknown(i64),
 }
 
-impl TryFrom<Value> for TaskStatus {
-    type Error = Error;
-
-    fn try_from(value: Value) -> Result<Self, Error> {
-        Ok(match value.try_into()? {
-            0 => Self::Queued,
-            1 => Self::Running,
-            2 => Self::Succeeded,
-            3 => Self::Failed,
-            v => Self::Unknown(v),
-        })
-    }
-}
-
-impl From<TaskStatus> for Value {
-    fn from(value: TaskStatus) -> Self {
-        match value {
-            TaskStatus::Queued => 0,
-            TaskStatus::Running => 1,
-            TaskStatus::Succeeded => 2,
-            TaskStatus::Failed => 3,
-            TaskStatus::Unknown(v) => v,
-        }
-        .into()
-    }
-}
-
-#[derive(Clone, Default, FromRow, IntoRow)]
+#[derive(Clone, Default, Debug, FromRow, IntoRow)]
 pub struct Task {
     pub id: i64,
     pub kind: TaskKind,
@@ -142,18 +85,20 @@ impl TaskStore {
             return Err("cannot take task in transaction".into());
         }
         let mut tx = self.0.db().transaction(write_tx_options()).await?;
-        let task = {
+        let task_row = {
             let mut rows = self
                 .find(
                     Context::new().with_tx(&mut tx),
                     Select::new()
                         .with_where(column("status").equal(TaskStatus::Queued))
-                        .with_limit(5),
+                        .with_limit(1),
                 )
-                .await?;
+                .await?
+                .into_raw();
             loop {
                 match rows.next().await {
-                    Some(Ok(v)) => match v.kind {
+                    Some(Ok(v)) => 
+                    match Task::from_row(&v)?.kind {
                         TaskKind::Unknown(_) => continue,
                         _ => break v,
                     },
@@ -165,10 +110,10 @@ impl TaskStore {
         let new_task = Task {
             status: TaskStatus::Running,
             expire_time: Some(now() + duration),
-            ..task.clone()
+            ..Task::from_row(&task_row)?
         };
         let event = self
-            .update_from(ctx.with_tx(&mut tx), new_task, task)
+            .update_from(ctx.with_tx(&mut tx), new_task, task_row)
             .await?;
         tx.commit().await?;
         Ok(Some(event.into_object()))
