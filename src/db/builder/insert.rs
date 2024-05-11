@@ -1,4 +1,4 @@
-use solve_db::{Error, IntoQuery, QueryBuilder, RawQuery, Value};
+use solve_db::{IntoQuery, IntoRow, QueryBuilder, RawQuery, Value};
 
 #[derive(Clone, Debug)]
 pub struct Insert {
@@ -6,22 +6,6 @@ pub struct Insert {
     columns: Vec<String>,
     values: Vec<Value>,
     returning: Vec<String>,
-}
-
-pub type Row = Vec<(String, Value)>;
-
-pub trait FromRow: Sized {
-    fn from_row(row: &solve_db::Row) -> Result<Self, Error>;
-}
-
-pub trait IntoRow {
-    fn into_row(self) -> Row;
-}
-
-impl IntoRow for Row {
-    fn into_row(self) -> Row {
-        self
-    }
 }
 
 impl Insert {

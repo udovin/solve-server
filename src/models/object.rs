@@ -1,10 +1,9 @@
 use std::fmt::Display;
 
 use crate::core::Error;
-use crate::db::builder::{Expression, IntoRow};
-use crate::db::{FromRow, Value};
+use crate::db::builder::Expression;
 
-use solve_db::{IntoValue, Row};
+use solve_db::{FromRow, IntoRow, IntoValue, Row, Value};
 use solve_db_types::Instant;
 
 pub trait Object: FromRow + IntoRow + Default + Clone + Send + Sync + 'static {

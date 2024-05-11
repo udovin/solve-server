@@ -1,6 +1,6 @@
-use solve_db::{IntoQuery, QueryBuilder, RawQuery, Value};
+use solve_db::{IntoQuery, IntoRow, QueryBuilder, RawQuery, Value};
 
-use super::{IntoRow, Predicate};
+use super::Predicate;
 
 #[derive(Clone, Debug)]
 pub struct Update {

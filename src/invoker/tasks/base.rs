@@ -1,13 +1,12 @@
 use std::sync::Arc;
 use std::time::Duration;
 
-use solve_db::Row;
+use solve_db::{IntoRow, Row};
 use solve_db_types::{Instant, JSON};
 pub use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::core::{Core, Error};
-use crate::db::IntoRow;
 use crate::models::{Context, Event, ObjectStore, Task, TaskKind, TaskStatus};
 
 pub struct TaskGuard {

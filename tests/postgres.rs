@@ -1,7 +1,8 @@
 use solve::core::{blocking_await, Error};
-use solve::db::builder::IntoRow;
-use solve::db::{new_database, FromRow, Value};
-use solve_db::{ConnectionOptions, Database, IntoValue, RawQuery, Row};
+use solve::db::new_database;
+use solve_db::{
+    ConnectionOptions, Database, FromRow, IntoRow, IntoValue, RawQuery, Row, SimpleRow, Value,
+};
 use solve_db_types::JSON;
 
 mod common;
@@ -31,7 +32,7 @@ impl FromRow for TestTypesRow {
 }
 
 impl IntoRow for TestTypesRow {
-    fn into_row(self) -> solve::db::builder::Row {
+    fn into_row(self) -> SimpleRow {
         let mut row = Vec::new();
         row.push(("id".into(), self.id.into_value()));
         row.push(("int64".into(), self.int64.into_value()));

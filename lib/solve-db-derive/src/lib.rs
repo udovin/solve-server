@@ -20,7 +20,7 @@ pub fn derive_from_row(input: TokenStream) -> TokenStream {
             });
             return TokenStream::from(quote! {
                 impl FromRow for #ident {
-                    fn from_row(row: &solve_db::Row) -> Result<Self, Error> {
+                    fn from_row(row: &solve_db::Row) -> Result<Self, solve_db::Error> {
                         Ok(Self { #(#tokens),* })
                     }
                 }
@@ -51,7 +51,7 @@ pub fn derive_into_row(input: TokenStream) -> TokenStream {
             });
             return TokenStream::from(quote! {
                 impl IntoRow for #ident {
-                    fn into_row(self) -> Vec<(String, solve_db::Value)> {
+                    fn into_row(self) -> solve_db::SimpleRow {
                         vec![ #(#tokens),* ]
                     }
                 }
@@ -79,7 +79,7 @@ pub fn derive_from_value(input: TokenStream) -> TokenStream {
             });
             return TokenStream::from(quote! {
                 impl solve_db::FromValue for #ident {
-                    fn from_value(value: &solve_db::Value) -> Result<Self, Error> {
+                    fn from_value(value: &solve_db::Value) -> Result<Self, solve_db::Error> {
                         Ok(match value.parse()? { #(#from_tokens),* })
                     }
                 }

@@ -1,8 +1,7 @@
 use std::{marker::PhantomData, sync::Arc};
 
 use crate::core::Error;
-use crate::db::builder::{column, Delete, Insert, IntoRow, Select, Update};
-use crate::db::FromRow;
+use crate::db::builder::{column, Delete, Insert, Select, Update};
 
 use super::{AsyncIter, BaseEvent, Context, Event, EventKind, Object, ObjectStore};
 
@@ -297,4 +296,6 @@ macro_rules! object_store_impl {
 }
 
 pub(super) use object_store_impl;
-use solve_db::{Database, Executor, IsolationLevel, Row, Rows, TransactionOptions};
+use solve_db::{
+    Database, Executor, FromRow, IntoRow, IsolationLevel, Row, Rows, TransactionOptions,
+};

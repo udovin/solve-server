@@ -32,6 +32,8 @@ impl ColumnIndex {
     }
 }
 
+pub type SimpleRow = Vec<(String, Value)>;
+
 #[derive(Clone, Debug)]
 pub struct Row {
     columns: ColumnIndex,
@@ -119,5 +121,42 @@ impl<'a> Iterator for RowIter<'a> {
         let (column, index) = self.iter.next()?;
         let value = self.values.get(*index)?;
         Some((column.as_str(), value))
+    }
+}
+
+pub trait FromRow: Sized {
+    fn from_row(row: &Row) -> Result<Self, Error>;
+}
+
+pub trait IntoRow: Sized {
+    fn into_row(self) -> SimpleRow;
+}
+
+impl FromRow for Row {
+    fn from_row(row: &Row) -> Result<Self, Error> {
+        Ok(row.clone())
+    }
+}
+
+impl FromRow for SimpleRow {
+    fn from_row(row: &Row) -> Result<Self, Error> {
+        Ok(row
+            .iter()
+            .map(|(k, v)| (k.to_owned(), v.to_owned()))
+            .collect::<Vec<_>>())
+    }
+}
+
+impl IntoRow for Row {
+    fn into_row(self) -> SimpleRow {
+        self.iter()
+            .map(|(k, v)| (k.to_owned(), v.to_owned()))
+            .collect()
+    }
+}
+
+impl IntoRow for SimpleRow {
+    fn into_row(self) -> Self {
+        self
     }
 }
