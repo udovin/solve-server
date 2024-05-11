@@ -1,4 +1,4 @@
-use crate::db::Value;
+use crate::{driver, Value};
 
 pub trait Query: Send + Sync {
     fn query(&self) -> &str;
@@ -64,24 +64,12 @@ impl<T: Query> IntoQuery<T> for T {
     }
 }
 
-pub trait QueryBuilderBackend: Send + Sync {
-    fn push(&mut self, ch: char);
-
-    fn push_str(&mut self, string: &str);
-
-    fn push_name(&mut self, name: &str);
-
-    fn push_value(&mut self, value: Value);
-
-    fn build(self: Box<Self>) -> RawQuery;
-}
-
 pub struct QueryBuilder {
-    inner: Box<dyn QueryBuilderBackend>,
+    inner: Box<dyn driver::QueryBuilder>,
 }
 
 impl QueryBuilder {
-    pub fn new<T: QueryBuilderBackend + 'static>(builder: T) -> Self {
+    pub fn new<T: driver::QueryBuilder + 'static>(builder: T) -> Self {
         let inner = Box::new(builder);
         Self { inner }
     }

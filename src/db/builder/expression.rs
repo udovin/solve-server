@@ -1,4 +1,4 @@
-use crate::db::{QueryBuilder, Value};
+use solve_db::{IntoValue, QueryBuilder, Value};
 
 #[derive(Debug, Clone)]
 pub struct BinaryExpression {
@@ -79,9 +79,9 @@ impl Expression {
     }
 }
 
-impl<T: Into<Value>> From<T> for Expression {
+impl<T: IntoValue> From<T> for Expression {
     fn from(value: T) -> Self {
-        Self::Value(value.into())
+        Self::Value(Value::from(value))
     }
 }
 

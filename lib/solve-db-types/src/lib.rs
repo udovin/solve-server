@@ -1,9 +1,6 @@
-use std::time::Duration;
-
 use chrono::{DateTime, Utc};
 
-use crate::core::Error;
-use solve_db::{FromValue, IntoValue, Value};
+use solve_db::{Error, FromValue, IntoValue, Value};
 
 #[derive(Copy, Clone, Default, Debug, PartialEq, PartialOrd)]
 pub struct Instant(DateTime<Utc>);
@@ -39,11 +36,25 @@ impl From<Instant> for DateTime<Utc> {
     }
 }
 
-impl std::ops::Add<Duration> for Instant {
+impl<T> std::ops::Add<T> for Instant
+where
+    DateTime<Utc>: std::ops::Add<T, Output = DateTime<Utc>>,
+{
     type Output = Self;
 
-    fn add(self, rhs: Duration) -> Self {
+    fn add(self, rhs: T) -> Self {
         Self(self.0 + rhs)
+    }
+}
+
+impl<T> std::ops::Sub<T> for Instant
+where
+    DateTime<Utc>: std::ops::Sub<T, Output = DateTime<Utc>>,
+{
+    type Output = Self;
+
+    fn sub(self, rhs: T) -> Self {
+        Self(self.0 - rhs)
     }
 }
 

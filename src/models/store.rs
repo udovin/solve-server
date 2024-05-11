@@ -1,6 +1,7 @@
-use crate::{core::Error, db::Row};
+use solve_db::{Row, Transaction};
+
+use crate::core::Error;
 use crate::db::builder::Select;
-use crate::db::Transaction;
 
 use super::{Event, Object};
 

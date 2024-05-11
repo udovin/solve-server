@@ -1,6 +1,8 @@
 use solve::core::{blocking_await, Error};
 use solve::db::builder::IntoRow;
-use solve::db::{new_database, ConnectionOptions, Database, FromRow, RawQuery, Row, Value};
+use solve::db::{new_database, FromRow, Value};
+use solve_db::{ConnectionOptions, Database, IntoValue, RawQuery, Row};
+use solve_db_types::JSON;
 
 mod common;
 
@@ -10,20 +12,20 @@ struct TestTypesRow {
     pub null_int64: Option<i64>,
     pub string: String,
     pub null_string: Option<String>,
-    pub json: serde_json::Value,
-    pub null_json: Option<serde_json::Value>,
+    pub json: JSON,
+    pub null_json: Option<JSON>,
 }
 
 impl FromRow for TestTypesRow {
     fn from_row(row: &Row) -> Result<Self, Error> {
         Ok(Self {
-            id: row.get("id").ok_or("unknown field")?.clone().try_into()?,
-            int64: row.get("int64").ok_or("unknown field")?.clone().try_into()?,
-            null_int64: row.get("null_int64").ok_or("unknown field")?.clone().try_into()?,
-            string: row.get("string").ok_or("unknown field")?.clone().try_into()?,
-            null_string: row.get("null_string").ok_or("unknown field")?.clone().try_into()?,
-            json: row.get("json").ok_or("unknown field")?.clone().try_into()?,
-            null_json: row.get("null_json").ok_or("unknown field")?.clone().try_into()?,
+            id: row.get_parsed("id")?,
+            int64: row.get_parsed("int64")?,
+            null_int64: row.get_parsed("null_int64")?,
+            string: row.get_parsed("string")?,
+            null_string: row.get_parsed("null_string")?,
+            json: row.get_parsed("json")?,
+            null_json: row.get_parsed("null_json")?,
         })
     }
 }
@@ -31,13 +33,13 @@ impl FromRow for TestTypesRow {
 impl IntoRow for TestTypesRow {
     fn into_row(self) -> solve::db::builder::Row {
         let mut row = Vec::new();
-        row.push(("id".into(), self.id.into()));
-        row.push(("int64".into(), self.int64.into()));
-        row.push(("null_int64".into(), self.null_int64.into()));
-        row.push(("string".into(), self.string.into()));
-        row.push(("null_string".into(), self.null_string.into()));
-        row.push(("json".into(), self.json.into()));
-        row.push(("null_json".into(), self.null_json.into()));
+        row.push(("id".into(), self.id.into_value()));
+        row.push(("int64".into(), self.int64.into_value()));
+        row.push(("null_int64".into(), self.null_int64.into_value()));
+        row.push(("string".into(), self.string.into_value()));
+        row.push(("null_string".into(), self.null_string.into_value()));
+        row.push(("json".into(), self.json.into_value()));
+        row.push(("null_json".into(), self.null_json.into_value()));
         row
     }
 }
@@ -54,7 +56,7 @@ async fn test_postgres() {
     };
     let config = solve::config::PostgresConfig {
         user: std::env::var("POSTGRES_USER").unwrap_or("postgres".into()),
-        hosts: vec![format!("{host}:{port}").into()],
+        hosts: vec![format!("{host}:{port}")],
         password: std::env::var("POSTGRES_PASSWORD").unwrap_or("postgres".into()),
         name: std::env::var("POSTGRES_NAME").unwrap_or("postgres".into()),
         sslmode: "".into(),
@@ -98,15 +100,15 @@ async fn test_postgres() {
                     "smallint"
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#,
                 [
-                    Value::BigInt(1),
+                    Value::from(1),
                     Value::Null,
-                    Value::Text("2".into()),
+                    Value::from("2"),
                     Value::Null,
                     Value::Blob("3".into()),
                     Value::Null,
                     Value::Blob("4".into()),
                     Value::Null,
-                    Value::BigInt(5),
+                    Value::from(5),
                 ],
             ))
             .await
@@ -124,15 +126,15 @@ async fn test_postgres() {
                     "smallint"
                 ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)"#,
                 [
-                    Value::BigInt(2),
-                    Value::BigInt(3),
+                    Value::from(2),
+                    Value::from(3),
                     Value::Text("4".into()),
                     Value::Text("5".into()),
                     Value::Blob("6".into()),
                     Value::Blob("7".into()),
                     Value::Blob("8".into()),
                     Value::Blob("9".into()),
-                    Value::BigInt(10),
+                    Value::from(10),
                 ],
             ))
             .await
@@ -146,29 +148,29 @@ async fn test_postgres() {
             .unwrap();
         {
             let row = rows.next().await.unwrap().unwrap();
-            assert_eq!(row.get(0).unwrap().clone(), Value::BigInt(1));
-            assert_eq!(row.get(1).unwrap().clone(), Value::BigInt(1));
-            assert_eq!(row.get(2).unwrap().clone(), Value::Null);
-            assert_eq!(row.get(3).unwrap().clone(), Value::Text("2".into()));
-            assert_eq!(row.get(4).unwrap().clone(), Value::Null);
-            assert_eq!(row.get(5).unwrap().clone(), Value::Blob("3".into()));
-            assert_eq!(row.get(6).unwrap().clone(), Value::Null);
-            assert_eq!(row.get(7).unwrap().clone(), Value::Blob("4".into()));
-            assert_eq!(row.get(8).unwrap().clone(), Value::Null);
-            assert_eq!(row.get(9).unwrap().clone(), Value::BigInt(5));
+            assert_eq!(row.get_value(0).unwrap().clone(), Value::from(1));
+            assert_eq!(row.get_value(1).unwrap().clone(), Value::from(1));
+            assert_eq!(row.get_value(2).unwrap().clone(), Value::Null);
+            assert_eq!(row.get_value(3).unwrap().clone(), Value::Text("2".into()));
+            assert_eq!(row.get_value(4).unwrap().clone(), Value::Null);
+            assert_eq!(row.get_value(5).unwrap().clone(), Value::Blob("3".into()));
+            assert_eq!(row.get_value(6).unwrap().clone(), Value::Null);
+            assert_eq!(row.get_value(7).unwrap().clone(), Value::Blob("4".into()));
+            assert_eq!(row.get_value(8).unwrap().clone(), Value::Null);
+            assert_eq!(row.get_value(9).unwrap().clone(), Value::from(5));
         }
         {
             let row = rows.next().await.unwrap().unwrap();
-            assert_eq!(row.get(0).unwrap().clone(), Value::BigInt(2));
-            assert_eq!(row.get(1).unwrap().clone(), Value::BigInt(2));
-            assert_eq!(row.get(2).unwrap().clone(), Value::BigInt(3));
-            assert_eq!(row.get(3).unwrap().clone(), Value::Text("4".into()));
-            assert_eq!(row.get(4).unwrap().clone(), Value::Text("5".into()));
-            assert_eq!(row.get(5).unwrap().clone(), Value::Blob("6".into()));
-            assert_eq!(row.get(6).unwrap().clone(), Value::Blob("7".into()));
-            assert_eq!(row.get(7).unwrap().clone(), Value::Blob("8".into()));
-            assert_eq!(row.get(8).unwrap().clone(), Value::Blob("9".into()));
-            assert_eq!(row.get(9).unwrap().clone(), Value::BigInt(10));
+            assert_eq!(row.get_value(0).unwrap().clone(), Value::from(2));
+            assert_eq!(row.get_value(1).unwrap().clone(), Value::from(2));
+            assert_eq!(row.get_value(2).unwrap().clone(), Value::from(3));
+            assert_eq!(row.get_value(3).unwrap().clone(), Value::from("4"));
+            assert_eq!(row.get_value(4).unwrap().clone(), Value::from("5"));
+            assert_eq!(row.get_value(5).unwrap().clone(), Value::Blob("6".into()));
+            assert_eq!(row.get_value(6).unwrap().clone(), Value::Blob("7".into()));
+            assert_eq!(row.get_value(7).unwrap().clone(), Value::Blob("8".into()));
+            assert_eq!(row.get_value(8).unwrap().clone(), Value::Blob("9".into()));
+            assert_eq!(row.get_value(9).unwrap().clone(), Value::from(10));
         }
         assert!(rows.next().await.is_none());
     }

@@ -1,12 +1,14 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use solve_db::Row;
+use solve_db_types::{Instant, JSON};
 pub use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::core::{Core, Error};
-use crate::db::{IntoRow, Row};
-use crate::models::{now, Context, Event, Instant, ObjectStore, Task, TaskKind, TaskStatus, JSON};
+use crate::db::IntoRow;
+use crate::models::{Context, Event, ObjectStore, Task, TaskKind, TaskStatus};
 
 pub struct TaskGuard {
     task: Mutex<Task>,
@@ -44,7 +46,7 @@ impl TaskGuard {
             status,
             ..task.clone()
         };
-        *task = self.update(new_task, now()).await?;
+        *task = self.update(new_task, Instant::now()).await?;
         Ok(())
     }
 
@@ -59,7 +61,7 @@ impl TaskGuard {
             state,
             ..task.clone()
         };
-        *task = self.update(new_task, now()).await?;
+        *task = self.update(new_task, Instant::now()).await?;
         Ok(())
     }
 
@@ -70,7 +72,7 @@ impl TaskGuard {
 
     pub async fn ping(&self, duration: Duration) -> Result<(), Error> {
         let mut task = self.task.lock().await;
-        let now = now();
+        let now = Instant::now();
         let new_task = Task {
             expire_time: Some(now + duration),
             ..task.clone()
@@ -101,7 +103,7 @@ impl TaskGuard {
 
     async fn is_expires_after(&self, delta: Duration) -> bool {
         let task = self.task.lock().await;
-        Self::is_expired(&task, now() + delta)
+        Self::is_expired(&task, Instant::now() + delta)
     }
 
     async fn update(&self, new_task: Task, now: Instant) -> Result<Task, Error> {
@@ -111,7 +113,11 @@ impl TaskGuard {
         }
         let store = self.core.tasks().expect("task store should be initialized");
         let event = store
-            .update_from(Context::new(), new_task, Row::from_iter(task.clone().into_row().into_iter()))
+            .update_from(
+                Context::new(),
+                new_task,
+                Row::from_iter(task.clone().into_row().into_iter()),
+            )
             .await?;
         *task = event.into_object();
         Ok(task.clone())

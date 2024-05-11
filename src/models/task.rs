@@ -2,13 +2,15 @@ use std::sync::Arc;
 
 use std::time::Duration;
 
+use solve_db::Database;
+use solve_db_types::{Instant, JSON};
+
 use crate::core::Error;
 use crate::db::builder::{column, Select};
-use crate::db::{Database, FromRow, IntoRow, Row, Value};
+use crate::db::{FromRow, IntoRow, Value};
 use crate::models::{write_tx_options, Context, ObjectStore};
 
-use super::types::Instant;
-use super::{now, object_store_impl, BaseEvent, Event, Object, PersistentStore, JSON};
+use super::{object_store_impl, BaseEvent, Event, Object, PersistentStore};
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, Value)]
 #[repr(i8)]
@@ -19,14 +21,13 @@ pub enum TaskKind {
     Unknown(i8),
 }
 
-impl ToString for TaskKind {  
-    fn to_string(&self) -> String {
+impl std::fmt::Display for TaskKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            TaskKind::JudgeSolution => "judge_solution",
-            TaskKind::UpdateProblemPackage => "update_problem_package",
-            TaskKind::Unknown(_) => "unknown",
+            TaskKind::JudgeSolution => f.write_str("judge_solution"),
+            TaskKind::UpdateProblemPackage => f.write_str("update_problem_package"),
+            TaskKind::Unknown(_) => f.write_str("unknown"),
         }
-        .into()
     }
 }
 
@@ -97,8 +98,7 @@ impl TaskStore {
                 .into_raw();
             loop {
                 match rows.next().await {
-                    Some(Ok(v)) => 
-                    match Task::from_row(&v)?.kind {
+                    Some(Ok(v)) => match Task::from_row(&v)?.kind {
                         TaskKind::Unknown(_) => continue,
                         _ => break v,
                     },
@@ -109,7 +109,7 @@ impl TaskStore {
         };
         let new_task = Task {
             status: TaskStatus::Running,
-            expire_time: Some(now() + duration),
+            expire_time: Some(Instant::now() + duration),
             ..Task::from_row(&task_row)?
         };
         let event = self

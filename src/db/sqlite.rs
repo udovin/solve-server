@@ -1,43 +1,66 @@
-use std::collections::HashMap;
-use std::sync::Arc;
+use solve_db::{
+    driver, ColumnIndex, Connection, ConnectionOptions, FromValue, IntoValue, QueryBuilder,
+    RawQuery, Row, Rows, Status, Transaction, TransactionOptions, Value,
+};
 
 use crate::core::Error;
 
-use super::{
-    Connection, ConnectionBackend, ConnectionOptions, DatabaseBackend, QueryBuilder,
-    QueryBuilderBackend, RawQuery, Row, Rows, RowsBackend, Status, Transaction, TransactionBackend,
-    TransactionOptions, Value,
-};
+struct WrapValue(tokio_sqlite::Value);
 
-impl From<Value> for tokio_sqlite::Value {
+impl FromValue for WrapValue {
+    fn from_value(value: &Value) -> Result<Self, Error> {
+        Ok(Self(match value {
+            Value::Null => tokio_sqlite::Value::Null,
+            Value::Bool(v) => tokio_sqlite::Value::Integer((*v).into()),
+            Value::BigInt(v) => tokio_sqlite::Value::Integer(*v),
+            Value::Double(v) => tokio_sqlite::Value::Real(*v),
+            Value::Text(v) => tokio_sqlite::Value::Text(v.clone()),
+            Value::Blob(v) => tokio_sqlite::Value::Blob(v.clone()),
+        }))
+    }
+}
+
+impl IntoValue for WrapValue {
+    fn into_value(self) -> Value {
+        match self.0 {
+            tokio_sqlite::Value::Null => Value::Null,
+            tokio_sqlite::Value::Integer(v) => Value::BigInt(v),
+            tokio_sqlite::Value::Real(v) => Value::Double(v),
+            tokio_sqlite::Value::Text(v) => Value::Text(v),
+            tokio_sqlite::Value::Blob(v) => Value::Blob(v),
+        }
+    }
+}
+
+impl From<Value> for WrapValue {
     fn from(value: Value) -> Self {
-        match value {
-            Value::Null => Self::Null,
-            Value::Bool(v) => Self::Integer(v.into()),
-            Value::BigInt(v) => Self::Integer(v),
-            Value::Double(v) => Self::Real(v),
-            Value::Text(v) => Self::Text(v),
-            Value::Blob(v) => Self::Blob(v),
+        Self(match value {
+            Value::Null => tokio_sqlite::Value::Null,
+            Value::Bool(v) => tokio_sqlite::Value::Integer(v.into()),
+            Value::BigInt(v) => tokio_sqlite::Value::Integer(v),
+            Value::Double(v) => tokio_sqlite::Value::Real(v),
+            Value::Text(v) => tokio_sqlite::Value::Text(v),
+            Value::Blob(v) => tokio_sqlite::Value::Blob(v),
+        })
+    }
+}
+
+impl From<WrapValue> for Value {
+    fn from(val: WrapValue) -> Self {
+        match val.0 {
+            tokio_sqlite::Value::Null => Value::Null,
+            tokio_sqlite::Value::Integer(v) => Value::BigInt(v),
+            tokio_sqlite::Value::Real(v) => Value::Double(v),
+            tokio_sqlite::Value::Text(v) => Value::Text(v),
+            tokio_sqlite::Value::Blob(v) => Value::Blob(v),
         }
     }
 }
 
-impl From<tokio_sqlite::Value> for Value {
-    fn from(value: tokio_sqlite::Value) -> Self {
-        match value {
-            tokio_sqlite::Value::Null => Self::Null,
-            tokio_sqlite::Value::Integer(v) => Self::BigInt(v),
-            tokio_sqlite::Value::Real(v) => Self::Double(v),
-            tokio_sqlite::Value::Text(v) => Self::Text(v),
-            tokio_sqlite::Value::Blob(v) => Self::Blob(v),
-        }
-    }
-}
-
-struct WrapRows<'a>(tokio_sqlite::Rows<'a>, Arc<HashMap<String, usize>>);
+struct WrapRows<'a>(tokio_sqlite::Rows<'a>, ColumnIndex);
 
 #[async_trait::async_trait]
-impl<'a> RowsBackend<'a> for WrapRows<'a> {
+impl<'a> driver::Rows<'a> for WrapRows<'a> {
     fn columns(&self) -> &[String] {
         self.0.columns()
     }
@@ -49,7 +72,10 @@ impl<'a> RowsBackend<'a> for WrapRows<'a> {
                 .await?
                 .map(|r| {
                     Row::new(
-                        r.into_values().into_iter().map(|v| v.into()).collect(),
+                        r.into_values()
+                            .into_iter()
+                            .map(|v| WrapValue(v).into())
+                            .collect(),
                         self.1.clone(),
                     )
                 })
@@ -64,7 +90,7 @@ pub(super) struct WrapQueryBuilder {
     values: Vec<Value>,
 }
 
-impl QueryBuilderBackend for WrapQueryBuilder {
+impl driver::QueryBuilder for WrapQueryBuilder {
     fn push(&mut self, ch: char) {
         self.query.push(ch);
     }
@@ -115,7 +141,7 @@ impl deadpool::managed::Manager for Manager {
 struct WrapTransaction<'a>(tokio_sqlite::Transaction<'a>);
 
 #[async_trait::async_trait]
-impl<'a> TransactionBackend<'a> for WrapTransaction<'a> {
+impl<'a> driver::Transaction<'a> for WrapTransaction<'a> {
     fn builder(&self) -> QueryBuilder {
         QueryBuilder::new(WrapQueryBuilder::default())
     }
@@ -129,7 +155,11 @@ impl<'a> TransactionBackend<'a> for WrapTransaction<'a> {
     }
 
     async fn execute(&mut self, query: &str, values: &[Value]) -> Result<Status, Error> {
-        let values: Vec<_> = values.iter().cloned().map(|v| v.into()).collect();
+        let values: Vec<_> = values
+            .iter()
+            .cloned()
+            .map(|v| <Value as Into<WrapValue>>::into(v).0)
+            .collect();
         let status = self.0.execute(query, &values).await?;
         Ok(Status {
             rows_affected: Some(status.rows_affected() as u64),
@@ -138,20 +168,21 @@ impl<'a> TransactionBackend<'a> for WrapTransaction<'a> {
     }
 
     async fn query(&mut self, query: &str, values: &[Value]) -> Result<Rows, Error> {
-        let values: Vec<_> = values.iter().cloned().map(|v| v.into()).collect();
+        let values: Vec<_> = values
+            .iter()
+            .cloned()
+            .map(|v| <Value as Into<WrapValue>>::into(v).0)
+            .collect();
         let rows = self.0.query(query, values).await?;
-        let mut columns = HashMap::with_capacity(rows.columns().len());
-        for i in 0..rows.columns().len() {
-            columns.insert(rows.columns()[i].clone(), i);
-        }
-        Ok(WrapRows(rows, Arc::new(columns)).into())
+        let columns = rows.columns().to_owned();
+        Ok(WrapRows(rows, ColumnIndex::new(columns)).into())
     }
 }
 
 struct WrapConnection(deadpool::managed::Object<Manager>);
 
 #[async_trait::async_trait]
-impl ConnectionBackend for WrapConnection {
+impl driver::Connection for WrapConnection {
     fn builder(&self) -> QueryBuilder {
         QueryBuilder::new(WrapQueryBuilder::default())
     }
@@ -162,7 +193,11 @@ impl ConnectionBackend for WrapConnection {
     }
 
     async fn execute(&mut self, query: &str, values: &[Value]) -> Result<Status, Error> {
-        let values: Vec<_> = values.iter().cloned().map(|v| v.into()).collect();
+        let values: Vec<_> = values
+            .iter()
+            .cloned()
+            .map(|v| <Value as Into<WrapValue>>::into(v).0)
+            .collect();
         let status = self.0.execute(query, values).await?;
         Ok(Status {
             rows_affected: Some(status.rows_affected() as u64),
@@ -171,13 +206,14 @@ impl ConnectionBackend for WrapConnection {
     }
 
     async fn query(&mut self, query: &str, values: &[Value]) -> Result<Rows, Error> {
-        let values: Vec<_> = values.iter().cloned().map(|v| v.into()).collect();
+        let values: Vec<_> = values
+            .iter()
+            .cloned()
+            .map(|v| <Value as Into<WrapValue>>::into(v).0)
+            .collect();
         let rows = self.0.query(query, values).await?;
-        let mut columns = HashMap::with_capacity(rows.columns().len());
-        for i in 0..rows.columns().len() {
-            columns.insert(rows.columns()[i].clone(), i);
-        }
-        Ok(WrapRows(rows, Arc::new(columns)).into())
+        let columns = rows.columns().to_owned();
+        Ok(WrapRows(rows, ColumnIndex::new(columns)).into())
     }
 }
 
@@ -194,7 +230,7 @@ impl WrapDatabase {
 }
 
 #[async_trait::async_trait]
-impl DatabaseBackend for WrapDatabase {
+impl driver::Database for WrapDatabase {
     fn builder(&self) -> QueryBuilder {
         QueryBuilder::new(WrapQueryBuilder::default())
     }

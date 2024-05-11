@@ -1,4 +1,4 @@
-use crate::db::{IntoQuery, QueryBuilder, RawQuery};
+use solve_db::{IntoQuery, QueryBuilder, RawQuery};
 
 use super::Predicate;
 

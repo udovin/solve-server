@@ -2,9 +2,10 @@ use std::fmt::Display;
 
 use crate::core::Error;
 use crate::db::builder::{Expression, IntoRow};
-use crate::db::{FromRow, Row, Value};
+use crate::db::{FromRow, Value};
 
-use super::types::{now, Instant};
+use solve_db::{IntoValue, Row};
+use solve_db_types::Instant;
 
 pub trait Object: FromRow + IntoRow + Default + Clone + Send + Sync + 'static {
     type Id: Clone + Into<Expression> + Default + Display + Send + Sync + PartialEq + 'static;
@@ -73,15 +74,14 @@ pub enum EventKind {
     Unknown(i8),
 }
 
-impl ToString for EventKind {  
-    fn to_string(&self) -> String {
+impl std::fmt::Display for EventKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            EventKind::Create => "create",
-            EventKind::Delete => "delete",
-            EventKind::Update => "update",
-            EventKind::Unknown(_) => "unknown",
+            EventKind::Create => f.write_str("create"),
+            EventKind::Delete => f.write_str("delete"),
+            EventKind::Update => f.write_str("update"),
+            EventKind::Unknown(_) => f.write_str("unknown"),
         }
-        .into()
     }
 }
 
@@ -125,7 +125,7 @@ impl<O: Object> Default for BaseEvent<O> {
     fn default() -> Self {
         Self {
             id: Default::default(),
-            time: now(),
+            time: Instant::now(),
             account_id: Default::default(),
             kind: EventKind::Create,
             object: Default::default(),
@@ -136,10 +136,10 @@ impl<O: Object> Default for BaseEvent<O> {
 impl<O: Object> FromRow for BaseEvent<O> {
     fn from_row(row: &Row) -> Result<Self, Error> {
         Ok(Self {
-            id: row.get(Self::ID).ok_or("unknown field")?.clone().try_into()?,
-            time: row.get("event_time").ok_or("unknown field")?.clone().try_into()?,
-            account_id: row.get("event_account_id").ok_or("unknown field")?.clone().try_into()?,
-            kind: row.get("event_kind").ok_or("unknown field")?.clone().try_into()?,
+            id: row.get_parsed(Self::ID)?,
+            time: row.get_parsed("event_time")?,
+            account_id: row.get_parsed("event_account_id")?,
+            kind: row.get_parsed("event_kind")?,
             object: FromRow::from_row(row)?,
         })
     }
@@ -148,10 +148,10 @@ impl<O: Object> FromRow for BaseEvent<O> {
 impl<O: Object> IntoRow for BaseEvent<O> {
     fn into_row(self) -> Vec<(String, Value)> {
         let mut row = self.object.into_row();
-        row.push((Self::ID.into(), self.id.into()));
-        row.push(("event_time".into(), self.time.into()));
-        row.push(("event_account_id".into(), self.account_id.into()));
-        row.push(("event_kind".into(), self.kind.into()));
+        row.push((Self::ID.into(), self.id.into_value()));
+        row.push(("event_time".into(), self.time.into_value()));
+        row.push(("event_account_id".into(), self.account_id.into_value()));
+        row.push(("event_kind".into(), self.kind.into_value()));
         row
     }
 }

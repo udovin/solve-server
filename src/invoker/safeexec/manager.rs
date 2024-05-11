@@ -23,8 +23,6 @@ pub struct ProcessConfig {
 
 pub struct Manager {
     #[allow(unused)]
-    cgroup_path: PathBuf,
-    #[allow(unused)]
     storage_path: PathBuf,
     manager: sbox::Manager,
     counter: AtomicI64,
@@ -51,14 +49,13 @@ impl Manager {
         let manager = sbox::Manager::new(&storage_path, &cgroup_path, user_mapper)
             .map_err(|v| v.to_string())?;
         Ok(Self {
-            cgroup_path,
             storage_path,
             manager,
             counter: AtomicI64::new(0),
         })
     }
 
-    pub fn process(&self, config: ProcessConfig) -> Result<Process, Error> {
+    pub fn create_process(&self, config: ProcessConfig) -> Result<Process, Error> {
         let name = self.counter.fetch_add(1, Ordering::SeqCst).to_string();
         let container = self
             .manager
@@ -67,7 +64,6 @@ impl Manager {
                 sbox::ContainerConfig {
                     layers: config.layers.clone(),
                     hostname: "safeexec".into(),
-                    ..Default::default()
                 },
             )
             .map_err(|v| v.to_string())?;

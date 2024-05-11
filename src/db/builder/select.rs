@@ -1,4 +1,4 @@
-use crate::db::{IntoQuery, QueryBuilder, RawQuery};
+use solve_db::{IntoQuery, QueryBuilder, RawQuery};
 
 use super::Predicate;
 
@@ -87,7 +87,7 @@ impl IntoQuery<RawQuery> for Select {
 
 #[cfg(test)]
 mod tests {
-    use crate::db::{IntoQuery, Query, QueryBuilder, QueryBuilderBackend, RawQuery, Value};
+    use solve_db::{driver, IntoQuery, IntoValue, Query, QueryBuilder, RawQuery, Value};
 
     use super::{super::column, Predicate, Select};
 
@@ -105,7 +105,7 @@ mod tests {
         }
     }
 
-    impl QueryBuilderBackend for TestBuilder {
+    impl driver::QueryBuilder for TestBuilder {
         fn push(&mut self, ch: char) {
             self.query.push(ch);
         }
@@ -229,7 +229,7 @@ mod tests {
                 query.query(),
                 "SELECT \"col1\", \"col2\" FROM \"tbl\" WHERE \"col1\" > $1 AND \"col2\" = $2"
             );
-            assert_eq!(query.values(), vec![5.into(), "abc".into()],);
+            assert_eq!(query.values(), vec![5.into_value(), "abc".into_value()],);
         }
     }
 }

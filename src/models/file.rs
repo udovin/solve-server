@@ -1,10 +1,12 @@
 use std::sync::Arc;
 
-use crate::core::Error;
-use crate::db::{Database, FromRow, IntoRow, Row, Value};
+use solve_db::Database;
+use solve_db_types::{Instant, JSON};
 
-use super::types::Instant;
-use super::{object_store_impl, BaseEvent, Object, PersistentStore, JSON};
+use crate::core::Error;
+use crate::db::{FromRow, IntoRow, Value};
+
+use super::{object_store_impl, BaseEvent, Object, PersistentStore};
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, Value)]
 #[repr(i8)]
@@ -15,14 +17,13 @@ pub enum FileStatus {
     Unknown(i8),
 }
 
-impl ToString for FileStatus {  
-    fn to_string(&self) -> String {
+impl std::fmt::Display for FileStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FileStatus::Pending => "pending",
-            FileStatus::Available => "available",
-            FileStatus::Unknown(_) => "unknown",
+            FileStatus::Pending => f.write_str("pending"),
+            FileStatus::Available => f.write_str("available"),
+            FileStatus::Unknown(_) => f.write_str("unknown"),
         }
-        .into()
     }
 }
 

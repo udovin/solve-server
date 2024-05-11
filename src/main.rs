@@ -24,7 +24,7 @@ enum Command {
 
 #[derive(clap::Parser)]
 struct Cli {
-    #[arg(long, default_value = "config.json")]
+    #[arg(long, default_value = "config.json", global = true)]
     config: std::path::PathBuf,
     #[command(subcommand)]
     command: Command,

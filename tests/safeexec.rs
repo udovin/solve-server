@@ -23,7 +23,7 @@ async fn test_safeexec() {
         memory_limit: 1024 * 1024,
         ..Default::default()
     };
-    let mut process = manager.process(config).unwrap();
+    let mut process = manager.create_process(config).unwrap();
     process.start().unwrap();
     let report = process.wait().await.unwrap();
     assert_eq!(report.exit_code, 0);

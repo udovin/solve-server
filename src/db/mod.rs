@@ -1,14 +1,18 @@
 pub mod builder;
 
-mod base;
+pub use builder::{FromRow, IntoRow};
+pub use solve_db::{FromRow, FromValue, IntoValue, Value};
+
 mod postgres;
-mod query;
 mod sqlite;
-mod value;
 
-pub use base::*;
-pub use query::*;
-pub use value::*;
+use crate::{config::DatabaseConfig, core::Error};
+use solve_db::Database;
 
-pub use solve_db_derive::{FromRow, Value};
-pub use builder::IntoRow;
+pub fn new_database(config: &DatabaseConfig) -> Result<Database, Error> {
+    let db = match config {
+        DatabaseConfig::SQLite(config) => sqlite::WrapDatabase::new(config.path.clone()).into(),
+        DatabaseConfig::Postgres(config) => postgres::WrapDatabase::new(config)?.into(),
+    };
+    Ok(db)
+}

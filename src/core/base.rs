@@ -2,9 +2,10 @@ use std::future::Future;
 use std::sync::Arc;
 
 use slog::Drain;
+use solve_db::Database;
 
 use crate::config::Config;
-use crate::db::{new_database, Database};
+use crate::db::new_database;
 use crate::models::{FileStore, TaskStore};
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;

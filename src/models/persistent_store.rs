@@ -2,7 +2,7 @@ use std::{marker::PhantomData, sync::Arc};
 
 use crate::core::Error;
 use crate::db::builder::{column, Delete, Insert, IntoRow, Select, Update};
-use crate::db::{Database, Executor, FromRow, IsolationLevel, Row, Rows, TransactionOptions};
+use crate::db::FromRow;
 
 use super::{AsyncIter, BaseEvent, Context, Event, EventKind, Object, ObjectStore};
 
@@ -280,7 +280,7 @@ macro_rules! object_store_impl {
                 &self,
                 ctx: $crate::models::Context<'_, '_>,
                 object: Self::Object,
-                from_row: $crate::db::Row,
+                from_row: solve_db::Row,
             ) -> std::result::Result<Self::Event, $crate::core::Error> {
                 self.0.update_from(ctx, object, from_row).await
             }
@@ -297,3 +297,4 @@ macro_rules! object_store_impl {
 }
 
 pub(super) use object_store_impl;
+use solve_db::{Database, Executor, IsolationLevel, Row, Rows, TransactionOptions};

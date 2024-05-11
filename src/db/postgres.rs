@@ -1,49 +1,49 @@
-use std::collections::HashMap;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::str::FromStr;
-use std::sync::Arc;
 
+use deadpool_postgres::tokio_postgres;
 use deadpool_postgres::tokio_postgres::types::{to_sql_checked, FromSql, IsNull, ToSql, Type};
-use deadpool_postgres::tokio_postgres::{RowStream, Statement};
 use futures_util::stream::StreamExt;
+use solve_db::{
+    driver, ColumnIndex, Connection, ConnectionOptions, IsolationLevel, QueryBuilder, Row, Rows,
+    Status, Transaction, TransactionOptions, Value,
+};
 use tokio_util::bytes::BufMut;
 
 use crate::config::PostgresConfig;
 use crate::core::Error;
 
 use super::sqlite::WrapQueryBuilder;
-use super::{
-    Connection, ConnectionBackend, ConnectionOptions, DatabaseBackend, IsolationLevel,
-    QueryBuilder, Row, Rows, RowsBackend, Status, Transaction, TransactionBackend,
-    TransactionOptions, Value,
-};
 
-impl<'a> FromSql<'a> for Value {
+#[derive(Debug)]
+struct WrapValue(Value);
+
+impl<'a> FromSql<'a> for WrapValue {
     fn from_sql(ty: &Type, raw: &'a [u8]) -> Result<Self, Error> {
-        match *ty {
-            Type::BOOL => Ok(Value::Bool(FromSql::from_sql(ty, raw)?)),
-            Type::INT2 => Ok(Value::BigInt(i16::from_sql(ty, raw)? as i64)),
-            Type::INT4 => Ok(Value::BigInt(i32::from_sql(ty, raw)? as i64)),
-            Type::INT8 => Ok(Value::BigInt(i64::from_sql(ty, raw)?)),
-            Type::FLOAT4 => Ok(Value::Double(f32::from_sql(ty, raw)? as f64)),
-            Type::FLOAT8 => Ok(Value::Double(FromSql::from_sql(ty, raw)?)),
-            Type::VARCHAR => Ok(Value::Text(FromSql::from_sql(ty, raw)?)),
-            Type::TEXT => Ok(Value::Text(FromSql::from_sql(ty, raw)?)),
-            Type::JSON => Ok(Value::Blob(raw.to_owned())),
+        Ok(WrapValue(match *ty {
+            Type::BOOL => Value::Bool(FromSql::from_sql(ty, raw)?),
+            Type::INT2 => Value::BigInt(i16::from_sql(ty, raw)? as i64),
+            Type::INT4 => Value::BigInt(i32::from_sql(ty, raw)? as i64),
+            Type::INT8 => Value::BigInt(i64::from_sql(ty, raw)?),
+            Type::FLOAT4 => Value::Double(f32::from_sql(ty, raw)? as f64),
+            Type::FLOAT8 => Value::Double(FromSql::from_sql(ty, raw)?),
+            Type::VARCHAR => Value::Text(FromSql::from_sql(ty, raw)?),
+            Type::TEXT => Value::Text(FromSql::from_sql(ty, raw)?),
+            Type::JSON => Value::Blob(raw.to_owned()),
             Type::JSONB => {
                 if raw.is_empty() || raw[0] != 1 {
                     return Err("unsupported JSONB encoding version".into());
                 }
-                Ok(Value::Blob(raw[1..].to_owned()))
+                Value::Blob(raw[1..].to_owned())
             }
-            Type::BYTEA => Ok(Value::Blob(FromSql::from_sql(ty, raw)?)),
+            Type::BYTEA => Value::Blob(FromSql::from_sql(ty, raw)?),
             _ => unreachable!(),
-        }
+        }))
     }
 
     fn from_sql_null(_ty: &Type) -> Result<Self, Error> {
-        Ok(Value::Null)
+        Ok(WrapValue(Value::Null))
     }
 
     fn accepts(ty: &Type) -> bool {
@@ -64,21 +64,21 @@ impl<'a> FromSql<'a> for Value {
     }
 }
 
-impl ToSql for Value {
+impl ToSql for WrapValue {
     fn to_sql(&self, ty: &Type, out: &mut tokio_util::bytes::BytesMut) -> Result<IsNull, Error> {
-        match self {
+        match &self.0 {
             Value::Null => Ok(IsNull::Yes),
-            Value::Bool(v) => ToSql::to_sql(v, ty, out),
+            Value::Bool(v) => ToSql::to_sql(&v, ty, out),
             Value::BigInt(v) => match *ty {
                 Type::INT2 => ToSql::to_sql(&i16::try_from(*v)?, ty, out),
                 Type::INT4 => ToSql::to_sql(&i32::try_from(*v)?, ty, out),
-                _ => ToSql::to_sql(v, ty, out),
+                _ => ToSql::to_sql(&v, ty, out),
             },
             Value::Double(v) => match *ty {
                 Type::FLOAT4 => ToSql::to_sql(&(*v as f32), ty, out),
-                _ => ToSql::to_sql(v, ty, out),
+                _ => ToSql::to_sql(&v, ty, out),
             },
-            Value::Text(v) => ToSql::to_sql(v, ty, out),
+            Value::Text(v) => ToSql::to_sql(&v, ty, out),
             Value::Blob(v) => match *ty {
                 Type::JSON => {
                     out.put(v.as_slice());
@@ -89,7 +89,7 @@ impl ToSql for Value {
                     out.put(v.as_slice());
                     Ok(IsNull::No)
                 }
-                _ => ToSql::to_sql(v, ty, out),
+                _ => ToSql::to_sql(&v, ty, out),
             },
         }
     }
@@ -114,55 +114,50 @@ impl ToSql for Value {
     to_sql_checked!();
 }
 
-impl From<IsolationLevel> for deadpool_postgres::tokio_postgres::IsolationLevel {
-    fn from(value: IsolationLevel) -> Self {
-        match value {
-            IsolationLevel::ReadUncommitted => Self::ReadUncommitted,
-            IsolationLevel::ReadCommitted => Self::ReadCommitted,
-            IsolationLevel::RepeatableRead => Self::RepeatableRead,
-            IsolationLevel::Serializable => Self::Serializable,
-        }
+fn get_isolation_level(level: IsolationLevel) -> tokio_postgres::IsolationLevel {
+    match level {
+        IsolationLevel::ReadUncommitted => tokio_postgres::IsolationLevel::ReadUncommitted,
+        IsolationLevel::ReadCommitted => tokio_postgres::IsolationLevel::ReadCommitted,
+        IsolationLevel::RepeatableRead => tokio_postgres::IsolationLevel::RepeatableRead,
+        IsolationLevel::Serializable => tokio_postgres::IsolationLevel::Serializable,
     }
 }
 
 struct WrapRows<'a> {
-    rows: Pin<Box<RowStream>>,
+    rows: Pin<Box<tokio_postgres::RowStream>>,
     columns: Vec<String>,
-    column_index: Arc<HashMap<String, usize>>,
+    column_index: ColumnIndex,
     _phantom: PhantomData<&'a ()>,
 }
 
 impl<'a> WrapRows<'a> {
-    pub fn new(statement: Statement, rows: RowStream) -> Self {
+    pub fn new(statement: tokio_postgres::Statement, rows: tokio_postgres::RowStream) -> Self {
         let columns: Vec<_> = statement
             .columns()
             .iter()
             .map(|c| c.name().to_owned())
             .collect();
-        let mut column_index = HashMap::with_capacity(columns.len());
-        for (i, column) in columns.iter().enumerate() {
-            column_index.insert(column.clone(), i);
-        }
         Self {
             rows: Box::pin(rows),
-            columns,
-            column_index: Arc::new(column_index),
+            columns: columns.clone(),
+            column_index: ColumnIndex::new(columns),
             _phantom: PhantomData,
         }
     }
 }
 
 #[async_trait::async_trait]
-impl<'a> RowsBackend<'a> for WrapRows<'a> {
+impl<'a> driver::Rows<'a> for WrapRows<'a> {
     fn columns(&self) -> &[String] {
         &self.columns
     }
 
     async fn next(&mut self) -> Option<Result<Row, Error>> {
-        let map_row = |r: deadpool_postgres::tokio_postgres::Row| {
+        let map_row = |r: tokio_postgres::Row| {
             let mut values = Vec::with_capacity(self.columns.len());
             for i in 0..self.columns.len() {
-                values.push(r.get(i));
+                let value: WrapValue = r.get(i);
+                values.push(value.0);
             }
             Row::new(values, self.column_index.clone())
         };
@@ -176,7 +171,7 @@ impl<'a> RowsBackend<'a> for WrapRows<'a> {
 struct WrapTransaction<'a>(deadpool_postgres::Transaction<'a>);
 
 #[async_trait::async_trait]
-impl<'a> TransactionBackend<'a> for WrapTransaction<'a> {
+impl<'a> driver::Transaction<'a> for WrapTransaction<'a> {
     fn builder(&self) -> QueryBuilder {
         QueryBuilder::new(WrapQueryBuilder::default())
     }
@@ -190,7 +185,10 @@ impl<'a> TransactionBackend<'a> for WrapTransaction<'a> {
     }
 
     async fn execute(&mut self, query: &str, values: &[Value]) -> Result<Status, Error> {
-        let rows_affected = self.0.execute_raw(query, values).await?;
+        let rows_affected = self
+            .0
+            .execute_raw(query, values.iter().map(|v| WrapValue(v.clone())))
+            .await?;
         Ok(Status {
             rows_affected: Some(rows_affected),
             last_insert_id: None,
@@ -199,7 +197,10 @@ impl<'a> TransactionBackend<'a> for WrapTransaction<'a> {
 
     async fn query(&mut self, query: &str, values: &[Value]) -> Result<Rows, Error> {
         let statement = self.0.client().prepare(query).await?;
-        let rows = self.0.query_raw(&statement, values).await?;
+        let rows = self
+            .0
+            .query_raw(&statement, values.iter().map(|v| WrapValue(v.clone())))
+            .await?;
         Ok(WrapRows::new(statement, rows).into())
     }
 }
@@ -207,7 +208,7 @@ impl<'a> TransactionBackend<'a> for WrapTransaction<'a> {
 struct WrapConnection(deadpool_postgres::Client);
 
 #[async_trait::async_trait]
-impl ConnectionBackend for WrapConnection {
+impl driver::Connection for WrapConnection {
     fn builder(&self) -> QueryBuilder {
         QueryBuilder::new(WrapQueryBuilder::default())
     }
@@ -217,12 +218,15 @@ impl ConnectionBackend for WrapConnection {
             .0
             .build_transaction()
             .read_only(options.read_only)
-            .isolation_level(options.isolation_level.into());
+            .isolation_level(get_isolation_level(options.isolation_level));
         Ok(WrapTransaction(tx_builder.start().await?).into())
     }
 
     async fn execute(&mut self, query: &str, values: &[Value]) -> Result<Status, Error> {
-        let rows_affected = self.0.execute_raw(query, values).await?;
+        let rows_affected = self
+            .0
+            .execute_raw(query, values.iter().map(|v| WrapValue(v.clone())))
+            .await?;
         Ok(Status {
             rows_affected: Some(rows_affected),
             last_insert_id: None,
@@ -231,7 +235,10 @@ impl ConnectionBackend for WrapConnection {
 
     async fn query(&mut self, query: &str, values: &[Value]) -> Result<Rows, Error> {
         let statement = self.0.prepare(query).await?;
-        let rows = self.0.query_raw(&statement, values).await?;
+        let rows = self
+            .0
+            .query_raw(&statement, values.iter().map(|v| WrapValue(v.clone())))
+            .await?;
         Ok(WrapRows::new(statement, rows).into())
     }
 }
@@ -279,7 +286,7 @@ impl WrapDatabase {
 }
 
 #[async_trait::async_trait]
-impl DatabaseBackend for WrapDatabase {
+impl driver::Database for WrapDatabase {
     fn builder(&self) -> QueryBuilder {
         QueryBuilder::new(WrapQueryBuilder::default())
     }

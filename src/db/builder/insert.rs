@@ -1,4 +1,4 @@
-use crate::db::{IntoQuery, QueryBuilder, RawQuery, Value};
+use solve_db::{Error, IntoQuery, QueryBuilder, RawQuery, Value};
 
 #[derive(Clone, Debug)]
 pub struct Insert {
@@ -9,6 +9,10 @@ pub struct Insert {
 }
 
 pub type Row = Vec<(String, Value)>;
+
+pub trait FromRow: Sized {
+    fn from_row(row: &solve_db::Row) -> Result<Self, Error>;
+}
 
 pub trait IntoRow {
     fn into_row(self) -> Row;
