@@ -1,7 +1,7 @@
-use solve_db::{Row, Transaction};
+use solve_db::Transaction;
 
 use crate::core::Error;
-use crate::db::builder::Select;
+use crate::db::builder::{Predicate, Select};
 
 use super::{Event, Object};
 
@@ -67,11 +67,11 @@ pub trait ObjectStore: Send {
         object: Self::Object,
     ) -> Result<Self::Event, Error>;
 
-    async fn update_from(
+    async fn update_where(
         &self,
         ctx: Context<'_, '_>,
         object: Self::Object,
-        from_row: Row,
+        predicate: Predicate,
     ) -> Result<Self::Event, Error>;
 
     async fn delete(&self, ctx: Context<'_, '_>, id: Self::Id) -> Result<Self::Event, Error>;

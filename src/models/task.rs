@@ -9,7 +9,7 @@ use crate::core::Error;
 use crate::db::builder::{column, Select};
 use crate::models::{write_tx_options, Context, ObjectStore};
 
-use super::{object_store_impl, BaseEvent, Event, Object, PersistentStore};
+use super::{object_store_impl, AsyncIter, BaseEvent, Event, Object, PersistentStore};
 
 #[derive(Clone, Copy, Default, Debug, PartialEq, Value)]
 #[repr(i8)]
@@ -85,7 +85,7 @@ impl TaskStore {
             return Err("cannot take task in transaction".into());
         }
         let mut tx = self.0.db().transaction(write_tx_options()).await?;
-        let task_row = {
+        let task = {
             let mut rows = self
                 .find(
                     Context::new().with_tx(&mut tx),
@@ -93,11 +93,10 @@ impl TaskStore {
                         .with_where(column("status").equal(TaskStatus::Queued))
                         .with_limit(1),
                 )
-                .await?
-                .into_raw();
+                .await?;
             loop {
                 match rows.next().await {
-                    Some(Ok(v)) => match Task::from_row(&v)?.kind {
+                    Some(Ok(v)) => match v.kind {
                         TaskKind::Unknown(_) => continue,
                         _ => break v,
                     },
@@ -109,10 +108,17 @@ impl TaskStore {
         let new_task = Task {
             status: TaskStatus::Running,
             expire_time: Some(Instant::now() + duration),
-            ..Task::from_row(&task_row)?
+            ..task
         };
         let event = self
-            .update_from(ctx.with_tx(&mut tx), new_task, task_row)
+            .update_where(
+                ctx.with_tx(&mut tx),
+                new_task,
+                column("kind")
+                    .equal(task.kind)
+                    .and(column("status").equal(task.status))
+                    .and(column("expire_time").equal(task.expire_time)),
+            )
             .await?;
         tx.commit().await?;
         Ok(Some(event.into_object()))

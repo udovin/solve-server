@@ -1,7 +1,7 @@
 use std::{marker::PhantomData, sync::Arc};
 
 use crate::core::Error;
-use crate::db::builder::{column, Delete, Insert, Select, Update};
+use crate::db::builder::{column, Delete, Insert, Predicate, Select, Update};
 
 use super::{AsyncIter, BaseEvent, Context, Event, EventKind, Object, ObjectStore};
 
@@ -60,7 +60,7 @@ impl<O: Object> PersistentStore<O> {
         &self,
         tx: &mut impl Executor<'_>,
         object: O,
-        from_row: Option<Row>,
+        predicate: Option<Predicate>,
     ) -> Result<O, Error> {
         assert!(object.is_valid());
         let id = object.id();
@@ -69,13 +69,8 @@ impl<O: Object> PersistentStore<O> {
             .into_iter()
             .filter(|v| v.0 != O::ID)
             .collect();
-        let predicate = match from_row {
-            Some(v) => v
-                .iter()
-                .filter(|v| v.0 != O::ID)
-                .fold(column(O::ID).equal(id), |p, v| {
-                    p.and(column(v.0).equal(v.1.clone()))
-                }),
+        let predicate = match predicate {
+            Some(v) => column(O::ID).equal(id).and(v),
             None => column(O::ID).equal(id),
         };
         let query = Update::new()
@@ -138,12 +133,6 @@ pub fn write_tx_options() -> TransactionOptions {
 pub struct RowsIter<'a, T> {
     rows: Rows<'a>,
     _phantom: PhantomData<T>,
-}
-
-impl<'a, T> RowsIter<'a, T> {
-    pub fn into_raw(self) -> Rows<'a> {
-        self.rows
-    }
 }
 
 #[async_trait::async_trait]
@@ -210,20 +199,20 @@ impl<O: Object> ObjectStore for PersistentStore<O> {
         Ok(event)
     }
 
-    async fn update_from(
+    async fn update_where(
         &self,
         mut ctx: Context<'_, '_>,
         object: Self::Object,
-        from_row: Row,
+        predicate: Predicate,
     ) -> Result<Self::Event, Error> {
         if let Some(tx) = ctx.tx.take() {
-            let object = self.update_object(tx, object, Some(from_row)).await?;
+            let object = self.update_object(tx, object, Some(predicate)).await?;
             let event = self.create_event(tx, BaseEvent::update(object)).await?;
             return Ok(event);
         }
         let mut tx = self.db.transaction(write_tx_options()).await?;
         let event = self
-            .update_from(ctx.with_tx(&mut tx), object, from_row)
+            .update_where(ctx.with_tx(&mut tx), object, predicate)
             .await?;
         tx.commit().await?;
         Ok(event)
@@ -275,13 +264,13 @@ macro_rules! object_store_impl {
                 self.0.update(ctx, object).await
             }
 
-            async fn update_from(
+            async fn update_where(
                 &self,
                 ctx: $crate::models::Context<'_, '_>,
                 object: Self::Object,
-                from_row: solve_db::Row,
+                predicate: $crate::db::builder::Predicate,
             ) -> std::result::Result<Self::Event, $crate::core::Error> {
-                self.0.update_from(ctx, object, from_row).await
+                self.0.update_where(ctx, object, predicate).await
             }
 
             async fn delete(

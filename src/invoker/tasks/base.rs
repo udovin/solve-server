@@ -7,6 +7,7 @@ pub use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 
 use crate::core::{Core, Error};
+use crate::db::builder::column;
 use crate::models::{Context, Event, ObjectStore, Task, TaskKind, TaskStatus};
 
 pub struct TaskGuard {
@@ -112,10 +113,13 @@ impl TaskGuard {
         }
         let store = self.core.tasks().expect("task store should be initialized");
         let event = store
-            .update_from(
+            .update_where(
                 Context::new(),
                 new_task,
-                Row::from_iter(task.clone().into_row().into_iter()),
+                column("kind")
+                    .equal(task.kind)
+                    .and(column("status").equal(task.status))
+                    .and(column("expire_time").equal(task.expire_time)),
             )
             .await?;
         *task = event.into_object();
