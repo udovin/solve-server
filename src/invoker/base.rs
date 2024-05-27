@@ -93,7 +93,7 @@ impl Invoker {
     async fn run_task(&self, task: Task, logger: slog::Logger) -> Result<(), Error> {
         slog::info!(logger, "Executing task");
         let task_impl = self.new_task_process(task.kind).await;
-        let task = TaskGuard::new(task, self.core.clone());
+        let task = TaskGuard::new(task, self.core.tasks().unwrap());
         let task_impl = match task_impl {
             Ok(v) => v,
             Err(err) => {

@@ -8,20 +8,21 @@ use tokio_util::sync::CancellationToken;
 
 use crate::core::{Core, Error};
 use crate::db::builder::column;
-use crate::models::{Context, Event, ObjectStore, Task, TaskKind, TaskStatus};
+use crate::models::{Context, Event, ObjectStore, Task, TaskKind, TaskStatus, TaskStore};
 
 pub struct TaskGuard {
     task: Mutex<Task>,
     stored_task: Mutex<Task>,
-    core: Arc<Core>,
+    tasks: Arc<TaskStore>,
 }
 
 impl TaskGuard {
-    pub fn new(task: Task, core: Arc<Core>) -> Arc<Self> {
+    pub fn new(task: Task, tasks: Arc<TaskStore>) -> Arc<Self> {
+        assert_eq!(task.status, TaskStatus::Running);
         Arc::new(Self {
             task: Mutex::new(task.clone()),
             stored_task: Mutex::new(task),
-            core,
+            tasks,
         })
     }
 
@@ -111,8 +112,8 @@ impl TaskGuard {
         if Self::is_expired(&task, now) {
             return Err("task expired".into());
         }
-        let store = self.core.tasks().expect("task store should be initialized");
-        let event = store
+        let event = self
+            .tasks
             .update_where(
                 Context::new(),
                 new_task,

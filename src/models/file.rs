@@ -1,5 +1,7 @@
 use std::sync::Arc;
 
+use crate::core::Error;
+use serde::{Deserialize, Serialize};
 use solve_db::{Database, FromRow, IntoRow, Value};
 use solve_db_types::{Instant, JSON};
 
@@ -24,6 +26,12 @@ impl std::fmt::Display for FileStatus {
     }
 }
 
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+pub struct FileMeta {
+    pub name: String,
+    pub size: Option<usize>,
+}
+
 #[derive(Clone, Default, Debug, FromRow, IntoRow)]
 pub struct File {
     pub id: i64,
@@ -31,6 +39,13 @@ pub struct File {
     pub expire_time: Option<Instant>,
     pub path: String,
     pub meta: JSON,
+}
+
+impl File {
+    pub fn set_meta(&mut self, meta: &FileMeta) -> Result<(), Error> {
+        self.meta = serde_json::to_value(meta)?.into();
+        Ok(())
+    }
 }
 
 impl Object for File {
