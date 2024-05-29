@@ -28,7 +28,7 @@ impl FileStorage for LocalStorage {
         todo!()
     }
 
-    async fn upload(&self, key: &str, file: Box<dyn FileHandle>) -> Result<(), Error> {
+    async fn upload(&self, _key: &str, _file: Box<dyn FileHandle>) -> Result<(), Error> {
         todo!()
     }
 }

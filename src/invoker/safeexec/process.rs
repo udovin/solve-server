@@ -49,9 +49,8 @@ impl Process {
         join_handle.await.unwrap()
     }
 
-    #[allow(unused)]
-    async fn run(process: sbox::Process, config: ProcessConfig) -> Result<Report, Error> {
-        let status = tokio::task::block_in_place(|| process.wait(None))?;
+    async fn run(process: sbox::Process, _config: ProcessConfig) -> Result<Report, Error> {
+        let _status = tokio::task::block_in_place(|| process.wait(None))?;
         todo!()
     }
 }

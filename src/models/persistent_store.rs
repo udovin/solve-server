@@ -1,5 +1,7 @@
 use std::{marker::PhantomData, sync::Arc};
 
+use solve_db::{Database, Executor, FromRow, IntoRow, IsolationLevel, Rows, TransactionOptions};
+
 use crate::core::Error;
 use crate::db::builder::{column, Delete, Insert, Predicate, Select, Update};
 
@@ -175,6 +177,25 @@ impl<O: Object> ObjectStore for PersistentStore<O> {
         })
     }
 
+    async fn get<'a>(
+        &'a self,
+        ctx: Context<'a, '_>,
+        id: Self::Id,
+    ) -> Result<Option<Self::Object>, Error> {
+        let mut iter = self
+            .find(
+                ctx,
+                Select::new()
+                    .with_where(column(O::ID).equal(id))
+                    .with_limit(1),
+            )
+            .await?;
+        match iter.next().await {
+            Some(v) => Ok(Some(v?)),
+            None => Ok(None),
+        }
+    }
+
     async fn create(&self, mut ctx: Context<'_, '_>, object: O) -> Result<Self::Event, Error> {
         if let Some(tx) = ctx.tx.take() {
             let object = self.create_object(tx, object).await?;
@@ -248,6 +269,14 @@ macro_rules! object_store_impl {
                 self.0.find(ctx, select).await
             }
 
+            async fn get<'a>(
+                &'a self,
+                ctx: $crate::models::Context<'a, '_>,
+                id: Self::Id,
+            ) -> std::result::Result<Option<Self::Object>, $crate::core::Error> {
+                self.0.get(ctx, id).await
+            }
+
             async fn create(
                 &self,
                 ctx: $crate::models::Context<'_, '_>,
@@ -285,6 +314,3 @@ macro_rules! object_store_impl {
 }
 
 pub(super) use object_store_impl;
-use solve_db::{
-    Database, Executor, FromRow, IntoRow, IsolationLevel, Row, Rows, TransactionOptions,
-};

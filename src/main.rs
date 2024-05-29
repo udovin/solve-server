@@ -33,7 +33,7 @@ struct Cli {
 async fn server_main(config: Config, _args: ServerArgs) -> Result<(), Error> {
     let _shutdown = CancellationToken::new();
     let mut core = Core::new(&config)?;
-    core.init_server().await?;
+    core.init_server(&config).await?;
     let _core = Arc::new(core);
     todo!()
 }
@@ -41,7 +41,7 @@ async fn server_main(config: Config, _args: ServerArgs) -> Result<(), Error> {
 async fn invoker_main(config: Config, _args: InvokerArgs) -> Result<(), Error> {
     let shutdown = CancellationToken::new();
     let mut core = Core::new(&config)?;
-    core.init_invoker().await?;
+    core.init_invoker(&config).await?;
     let core = Arc::new(core);
     let invoker_config = match &config.invoker {
         Some(v) => v,

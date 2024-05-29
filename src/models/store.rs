@@ -55,6 +55,12 @@ pub trait ObjectStore: Send {
         select: Select,
     ) -> Result<Self::FindIter<'a>, Error>;
 
+    async fn get<'a>(
+        &'a self,
+        ctx: Context<'a, '_>,
+        id: Self::Id,
+    ) -> Result<Option<Self::Object>, Error>;
+
     async fn create(
         &self,
         ctx: Context<'_, '_>,

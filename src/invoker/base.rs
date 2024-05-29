@@ -5,9 +5,10 @@ use tokio_util::sync::CancellationToken;
 
 use crate::config;
 use crate::core::{Core, Error};
-use crate::models::{Context, Task, TaskKind, TaskStatus};
+use crate::managers::tasks::Task;
+use crate::models::{TaskKind, TaskStatus};
 
-use super::tasks::{JudgeSolutionTask, TaskGuard, TaskProcess, UpdateProblemPackageTask};
+use super::tasks::{JudgeSolutionTask, TaskProcess, UpdateProblemPackageTask};
 
 pub struct Invoker {
     core: Arc<Core>,
@@ -42,12 +43,13 @@ impl Invoker {
         logger: slog::Logger,
     ) -> Result<(), Error> {
         slog::info!(logger, "Running invoker");
+        let task_manager = self.core.task_manager();
         loop {
             tokio::select! {
                 _ = shutdown.cancelled() => {
                     break;
                 }
-                task = self.take_task() => {
+                task = task_manager.take_task() => {
                     let task = match task {
                         Ok(Some(task)) => task,
                         Ok(None) => {
@@ -64,8 +66,10 @@ impl Invoker {
                             continue;
                         }
                     };
+                    let task_id = task.get_id().await;
+                    let task_kind = task.get_kind().await;
                     let logger = logger
-                        .new(slog::o!("task_id" => task.id, "kind" => task.kind.to_string()));
+                        .new(slog::o!("task_id" => task_id, "kind" => task_kind.to_string()));
                     if let Err(err) = self.run_task(task, logger.clone()).await {
                         slog::error!(logger, "Task failed"; "error" => err.to_string());
                     } else {
@@ -78,23 +82,10 @@ impl Invoker {
         Ok(())
     }
 
-    async fn take_task(&self) -> Result<Option<Task>, Error> {
-        let tasks = self.core.tasks().expect("task store should be initialized");
-        let task = match tasks
-            .take_task(Context::new(), Duration::from_secs(30))
-            .await?
-        {
-            Some(v) => v,
-            None => return Ok(None),
-        };
-        Ok(Some(task))
-    }
-
     async fn run_task(&self, task: Task, logger: slog::Logger) -> Result<(), Error> {
         slog::info!(logger, "Executing task");
-        let task_impl = self.new_task_process(task.kind).await;
-        let task = TaskGuard::new(task, self.core.tasks().unwrap());
-        let task_impl = match task_impl {
+        let task_kind = task.get_kind().await;
+        let task_impl = match self.new_task_process(task_kind).await {
             Ok(v) => v,
             Err(err) => {
                 if let Err(err) = task.set_status(TaskStatus::Failed).await {
@@ -104,7 +95,7 @@ impl Invoker {
             }
         };
         let shutdown = CancellationToken::new();
-        let pinger_task = tokio::spawn(task.clone().run_pinger(shutdown.clone(), logger.clone()));
+        let pinger_task = task.spawn_pinger(shutdown.clone(), logger.clone());
         let result = task_impl.run(task.clone(), shutdown.clone()).await;
         shutdown.cancel();
         pinger_task.await.unwrap();

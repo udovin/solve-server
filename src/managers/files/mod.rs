@@ -8,9 +8,9 @@ use std::time::Duration;
 use local_storage::LocalStorage;
 
 use crate::config::StorageConfig;
-use crate::core::{Core, Error};
+use crate::core::Error;
 use crate::db::builder::{column, Select};
-use crate::models::{self, AsyncIter, Context, Event, FileStatus, ObjectStore};
+use crate::models::{self, AsyncIter, Context, Event, FileMeta, FileStatus, ObjectStore};
 
 #[async_trait::async_trait]
 pub trait FileStorage: Send + Sync {
@@ -30,6 +30,10 @@ pub struct File {
 }
 
 impl File {
+    pub fn parse_meta(&self) -> Result<FileMeta, Error> {
+        self.file.parse_meta()
+    }
+
     pub async fn open(&self) -> Result<tokio::fs::File, std::io::Error> {
         tokio::fs::File::open(self.path.as_path()).await
     }
@@ -119,7 +123,7 @@ impl FileManager {
         })
     }
 
-    pub async fn delete(&self, id: i64) -> Result<(), Error> {
+    pub async fn delete(&self, _id: i64) -> Result<(), Error> {
         todo!()
     }
 }
@@ -147,6 +151,6 @@ pub fn new_storage(config: &StorageConfig) -> Result<Arc<dyn FileStorage>, Error
             let storage = LocalStorage::new(&config.files_dir)?;
             Ok(Arc::new(storage))
         }
-        StorageConfig::S3(config) => unimplemented!(),
+        StorageConfig::S3(_config) => unimplemented!(),
     }
 }

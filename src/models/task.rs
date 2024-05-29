@@ -2,6 +2,8 @@ use std::sync::Arc;
 
 use std::time::Duration;
 
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use solve_db::{Database, FromRow, IntoRow, Value};
 use solve_db_types::{Instant, JSON};
 
@@ -51,6 +53,26 @@ pub struct Task {
     pub expire_time: Option<Instant>,
 }
 
+impl Task {
+    pub fn set_config<T: Serialize>(&mut self, config: T) -> Result<(), Error> {
+        self.config = serde_json::to_value(config)?.into();
+        Ok(())
+    }
+
+    pub fn parse_config<T: DeserializeOwned>(&self) -> Result<T, Error> {
+        Ok(serde_json::from_value(self.config.clone().into())?)
+    }
+
+    pub fn set_state<T: Serialize>(&mut self, state: T) -> Result<(), Error> {
+        self.state = serde_json::to_value(state)?.into();
+        Ok(())
+    }
+
+    pub fn parse_state<T: DeserializeOwned>(&self) -> Result<T, Error> {
+        Ok(serde_json::from_value(self.state.clone().into())?)
+    }
+}
+
 impl Object for Task {
     type Id = i64;
 
@@ -65,6 +87,21 @@ impl Object for Task {
     fn is_valid(&self) -> bool {
         !matches!(self.kind, TaskKind::Unknown(_)) && !matches!(self.status, TaskStatus::Unknown(_))
     }
+}
+
+#[derive(Clone, Default, Serialize, Deserialize)]
+pub struct JudgeSolutionTaskConfig {
+    solution_id: i64,
+    #[serde(default, skip_serializing_if = "<&bool as std::ops::Not>::not")]
+    enable_points: bool,
+}
+
+#[derive(Clone, Default, Serialize, Deserialize)]
+pub struct UpdateProblemPackageTaskConfig {
+    problem_id: i64,
+    file_id: i64,
+    #[serde(default, skip_serializing_if = "<&bool as std::ops::Not>::not")]
+    compile: bool,
 }
 
 pub type TaskEvent = BaseEvent<Task>;
@@ -91,7 +128,7 @@ impl TaskStore {
                     Context::new().with_tx(&mut tx),
                     Select::new()
                         .with_where(column("status").equal(TaskStatus::Queued))
-                        .with_limit(1),
+                        .with_limit(5),
                 )
                 .await?;
             loop {

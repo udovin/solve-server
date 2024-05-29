@@ -46,6 +46,10 @@ impl File {
         self.meta = serde_json::to_value(meta)?.into();
         Ok(())
     }
+
+    pub fn parse_meta(&self) -> Result<FileMeta, Error> {
+        Ok(serde_json::from_value(self.meta.clone().into())?)
+    }
 }
 
 impl Object for File {
