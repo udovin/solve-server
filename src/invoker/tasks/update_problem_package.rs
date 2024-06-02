@@ -16,7 +16,7 @@ impl UpdateProblemPackageTask {
 
 #[async_trait::async_trait]
 impl TaskProcess for UpdateProblemPackageTask {
-    async fn run(&self, task: Task, _shutdown: CancellationToken) -> Result<(), Error> {
+    async fn run(self: Box<Self>, task: Task, _shutdown: CancellationToken) -> Result<(), Error> {
         let _config: UpdateProblemPackageTaskConfig = task.parse_config().await?;
         todo!()
     }

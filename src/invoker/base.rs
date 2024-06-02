@@ -6,7 +6,7 @@ use tokio_util::sync::CancellationToken;
 use crate::config;
 use crate::core::{Core, Error};
 use crate::managers::tasks::Task;
-use crate::models::{TaskKind, TaskStatus};
+use crate::models::{SolutionStore, TaskKind, TaskStatus};
 
 use super::tasks::{JudgeSolutionTask, TaskProcess, UpdateProblemPackageTask};
 
@@ -21,6 +21,10 @@ impl Invoker {
             core,
             workers: config.workers,
         }
+    }
+
+    pub fn solution_store(&self) -> Arc<SolutionStore> {
+        self.core.solution_store()
     }
 
     pub async fn run(self, shutdown: CancellationToken) -> Result<(), Error> {

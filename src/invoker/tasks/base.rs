@@ -6,5 +6,5 @@ pub use crate::managers::tasks::Task;
 
 #[async_trait::async_trait]
 pub trait TaskProcess: Send + Sync {
-    async fn run(&self, task: Task, shutdown: CancellationToken) -> Result<(), Error>;
+    async fn run(self: Box<Self>, task: Task, shutdown: CancellationToken) -> Result<(), Error>;
 }

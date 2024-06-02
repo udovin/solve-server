@@ -91,17 +91,17 @@ impl Object for Task {
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 pub struct JudgeSolutionTaskConfig {
-    solution_id: i64,
+    pub solution_id: i64,
     #[serde(default, skip_serializing_if = "<&bool as std::ops::Not>::not")]
-    enable_points: bool,
+    pub enable_points: bool,
 }
 
 #[derive(Clone, Default, Serialize, Deserialize)]
 pub struct UpdateProblemPackageTaskConfig {
-    problem_id: i64,
-    file_id: i64,
+    pub problem_id: i64,
+    pub file_id: i64,
     #[serde(default, skip_serializing_if = "<&bool as std::ops::Not>::not")]
-    compile: bool,
+    pub compile: bool,
 }
 
 pub type TaskEvent = BaseEvent<Task>;
