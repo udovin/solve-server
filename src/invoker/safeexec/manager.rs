@@ -28,6 +28,8 @@ pub struct Manager {
     counter: AtomicI64,
 }
 
+const CGROUP_FS_PATH: &str = "/sys/fs/cgroup";
+
 impl Manager {
     pub fn new(
         storage_path: impl Into<PathBuf>,
@@ -35,12 +37,20 @@ impl Manager {
     ) -> Result<Self, Error> {
         let cgroup_path = cgroup_path.into();
         let cgroup_path = if cgroup_path.is_absolute() {
-            PathBuf::from("/sys/fs/cgroup").join(cgroup_path.strip_prefix("/")?)
+            PathBuf::from(CGROUP_FS_PATH).join(cgroup_path.strip_prefix("/")?)
         } else {
-            Self::get_current_cgroup()?.join(cgroup_path)
+            // We use the parent cgroup of the current process because we cannot
+            // create a child cgroup in a cgroup with any attached process.
+            PathBuf::from(CGROUP_FS_PATH)
+                .join(
+                    Self::get_current_cgroup()?
+                        .parent()
+                        .ok_or("Cannot find parent cgroup")?,
+                )
+                .join(cgroup_path)
         };
         let cgroup_path = cgroup_path.clean();
-        assert!(cgroup_path.starts_with("/sys/fs/cgroup/"));
+        assert!(cgroup_path.starts_with(CGROUP_FS_PATH));
         let storage_path = storage_path.into().clean();
         assert!(storage_path.is_absolute());
         Self::setup_cgroup(&cgroup_path).map_err(|err| format!("cannot setup cgroup: {}", err))?;
@@ -100,13 +110,13 @@ impl Manager {
             let line = std::str::from_utf8(line)?;
             let parts: Vec<_> = line.split(|c| c == ':').collect();
             if parts.len() < 3 {
-                return Err(format!("invalid cgroup line: {}", line).into());
+                return Err(format!("Invalid cgroup line: {}", line).into());
             }
             if parts[1].is_empty() {
                 let name = parts[2].trim_start_matches('/');
-                return Ok(PathBuf::from("/sys/fs/cgroup").join(name));
+                return Ok(PathBuf::from(name));
             }
         }
-        Err("cannot find cgroup path".into())
+        Err("Cannot find cgroup path".into())
     }
 }

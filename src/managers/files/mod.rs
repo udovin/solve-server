@@ -1,11 +1,14 @@
 mod local_storage;
 
 use std::num::NonZeroUsize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
 use local_storage::LocalStorage;
+use solve_db_types::Instant;
+use tokio::io::AsyncRead;
 
 use crate::config::StorageConfig;
 use crate::core::Error;
@@ -20,7 +23,9 @@ pub trait FileStorage: Send + Sync {
 
     async fn generate_key(&self) -> Result<String, Error>;
 
-    async fn upload(&self, key: &str, file: Box<dyn FileHandle>) -> Result<(), Error>;
+    async fn upload(&self, key: &str, file: FileInfo) -> Result<(), Error>;
+
+    async fn delete(&self, key: &str) -> Result<(), Error>;
 }
 
 #[derive(Clone)]
@@ -30,6 +35,10 @@ pub struct File {
 }
 
 impl File {
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+
     pub fn parse_meta(&self) -> Result<FileMeta, Error> {
         self.file.parse_meta()
     }
@@ -59,10 +68,30 @@ impl solve_cache::Store for FileStore {
     }
 }
 
-pub trait FileHandle: std::io::Read + std::io::Seek + Send + Sync {
-    fn name(&self) -> String;
+pub enum FileInfo {}
 
-    fn size(&self) -> Option<usize>;
+impl FileInfo {
+    pub fn name(&self) -> Option<String> {
+        None
+    }
+
+    pub fn size(&self) -> Option<usize> {
+        None
+    }
+
+    pub fn path(&self) -> Option<PathBuf> {
+        None
+    }
+}
+
+impl AsyncRead for FileInfo {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+        buf: &mut tokio::io::ReadBuf<'_>,
+    ) -> std::task::Poll<std::io::Result<()>> {
+        todo!()
+    }
 }
 
 type Cache = solve_cache::LruCache<String, PathBuf>;
@@ -87,7 +116,7 @@ impl FileManager {
         }
     }
 
-    pub async fn download(&self, id: i64) -> Result<File, Error> {
+    pub async fn load(&self, id: i64) -> Result<File, Error> {
         let file = self
             .files
             .find(
@@ -97,20 +126,23 @@ impl FileManager {
             .await?
             .next()
             .await
-            .ok_or("file not found")??;
+            .ok_or("File not found")??;
+        if file.status != models::FileStatus::Available {
+            Err(format!("File has invalid status: {}", file.status))?;
+        }
         let path = self.manager.load(&file.path).await?;
         Ok(File { file, path })
     }
 
-    pub async fn upload(&self, file: Box<dyn FileHandle>) -> Result<PendingFile, Error> {
+    pub async fn upload(&self, file: FileInfo) -> Result<PendingFile, Error> {
         let key = self.storage.generate_key().await?;
         let meta = models::FileMeta {
-            name: file.name(),
+            name: file.name().unwrap_or_default(),
             size: file.size(),
         };
         let mut model = models::File {
             status: models::FileStatus::Pending,
-            expire_time: Some(solve_db_types::Instant::now() + Duration::from_secs(60)),
+            expire_time: Some(Instant::now() + Duration::from_secs(60)),
             path: key.clone(),
             ..Default::default()
         };
@@ -123,8 +155,39 @@ impl FileManager {
         })
     }
 
-    pub async fn delete(&self, _id: i64) -> Result<(), Error> {
-        todo!()
+    pub async fn delete(&self, id: i64) -> Result<(), Error> {
+        let model = match self.files.get(Context::new(), id).await? {
+            Some(v) => v,
+            None => Err("File does not exist")?,
+        };
+        let mut expire_time = Instant::now() + Duration::from_secs(60);
+        if matches!(model.status, models::FileStatus::Pending) {
+            if let Some(time) = model.expire_time {
+                if Instant::now() < time {
+                    Err("Cannot delete not uploaded file")?;
+                }
+                expire_time = time;
+            }
+        }
+        let key = model.path.clone();
+        let status = model.status.clone();
+        let model = models::File {
+            status: models::FileStatus::Pending,
+            expire_time: Some(expire_time),
+            ..model
+        };
+        self.files
+            .update_where(Context::new(), model, column("status").equal(status))
+            .await?;
+        self.storage.delete(&key).await?;
+        self.files
+            .delete_where(
+                Context::new(),
+                id,
+                column("status").equal(models::FileStatus::Pending),
+            )
+            .await?;
+        Ok(())
     }
 }
 
@@ -137,6 +200,7 @@ impl PendingFile {
     pub async fn confirm(self, ctx: models::Context<'_, '_>) -> Result<models::File, Error> {
         let mut model = self.model;
         model.status = FileStatus::Available;
+        model.expire_time = None;
         Ok(self
             .files
             .update_where(ctx, model, column("status").equal(FileStatus::Pending))

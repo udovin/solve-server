@@ -7,8 +7,9 @@ use solve_db_types::{Instant, JSON};
 
 use super::{object_store_impl, BaseEvent, Object, PersistentStore};
 
-#[derive(Clone, Copy, Default, Debug, PartialEq, Value)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Value, Serialize, Deserialize)]
 #[repr(i8)]
+#[serde(rename_all = "snake_case")]
 pub enum FileStatus {
     #[default]
     Pending = 0,
@@ -18,11 +19,7 @@ pub enum FileStatus {
 
 impl std::fmt::Display for FileStatus {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            FileStatus::Pending => f.write_str("pending"),
-            FileStatus::Available => f.write_str("available"),
-            FileStatus::Unknown(_) => f.write_str("unknown"),
-        }
+        self.serialize(f)
     }
 }
 
@@ -30,6 +27,12 @@ impl std::fmt::Display for FileStatus {
 pub struct FileMeta {
     pub name: String,
     pub size: Option<usize>,
+}
+
+impl std::fmt::Display for FileMeta {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.serialize(f)
+    }
 }
 
 #[derive(Clone, Default, Debug, FromRow, IntoRow)]

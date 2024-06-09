@@ -1,12 +1,31 @@
 use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
 use solve_db::{Database, FromRow, IntoRow, Value};
 use solve_db_types::{Instant, JSON};
 
+use crate::core::Error;
+
 use super::{object_store_impl, BaseEvent, Object, PersistentStore};
 
-#[derive(Clone, Copy, Default, Debug, PartialEq, Value)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Value, Serialize, Deserialize)]
 #[repr(i8)]
+#[serde(rename_all = "snake_case")]
+pub enum SolutionKind {
+    #[default]
+    ContestSolution = 1,
+    Unknown(u8),
+}
+
+impl std::fmt::Display for SolutionKind {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.serialize(f)
+    }
+}
+
+#[derive(Clone, Copy, Default, Debug, PartialEq, Value, Serialize, Deserialize)]
+#[repr(i8)]
+#[serde(rename_all = "snake_case")]
 pub enum Verdict {
     #[default]
     Accepted = 1,
@@ -24,25 +43,19 @@ pub enum Verdict {
 
 impl std::fmt::Display for Verdict {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Verdict::Accepted => f.write_str("accepted"),
-            Verdict::Rejected => f.write_str("rejected"),
-            Verdict::CompilationError => f.write_str("compilation_error"),
-            Verdict::TimeLimitExceeded => f.write_str("time_limit_exceeded"),
-            Verdict::MemoryLimitExceeded => f.write_str("memory_limit_exceeded"),
-            Verdict::RuntimeError => f.write_str("runtime_error"),
-            Verdict::WrongAnswer => f.write_str("wrong_answer"),
-            Verdict::PresentationError => f.write_str("presentation_error"),
-            Verdict::PartiallyAccepted => f.write_str("partially_accepted"),
-            Verdict::Failed => f.write_str("failed"),
-            Verdict::Unknown(_) => f.write_str("unknown"),
-        }
+        self.serialize(f)
     }
+}
+
+#[derive(Clone, Default, Debug, Serialize, Deserialize)]
+pub struct JudgeReport {
+    pub verdict: Verdict,
 }
 
 #[derive(Clone, Default, Debug, FromRow, IntoRow)]
 pub struct Solution {
     pub id: i64,
+    pub kind: SolutionKind,
     pub problem_id: i64,
     pub compiler_id: i64,
     pub author_id: i64,
@@ -50,6 +63,17 @@ pub struct Solution {
     pub create_time: Instant,
     pub content: Option<String>,
     pub content_id: Option<i64>,
+}
+
+impl Solution {
+    pub fn set_report(&mut self, report: Option<JudgeReport>) -> Result<(), Error> {
+        self.report = serde_json::to_value(report)?.into();
+        Ok(())
+    }
+
+    pub fn parse_report(&self) -> Result<Option<JudgeReport>, Error> {
+        Ok(serde_json::from_value(self.report.clone().into())?)
+    }
 }
 
 impl Object for Solution {
@@ -61,6 +85,10 @@ impl Object for Solution {
 
     fn set_id(&mut self, id: Self::Id) {
         self.id = id;
+    }
+
+    fn is_valid(&self) -> bool {
+        !matches!(self.kind, SolutionKind::Unknown(_))
     }
 }
 

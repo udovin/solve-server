@@ -13,8 +13,9 @@ use crate::models::{write_tx_options, Context, ObjectStore};
 
 use super::{object_store_impl, AsyncIter, BaseEvent, Event, Object, PersistentStore};
 
-#[derive(Clone, Copy, Default, Debug, PartialEq, Value)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Value, Serialize, Deserialize)]
 #[repr(i8)]
+#[serde(rename_all = "snake_case")]
 pub enum TaskKind {
     #[default]
     JudgeSolution = 1,
@@ -24,16 +25,13 @@ pub enum TaskKind {
 
 impl std::fmt::Display for TaskKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            TaskKind::JudgeSolution => f.write_str("judge_solution"),
-            TaskKind::UpdateProblemPackage => f.write_str("update_problem_package"),
-            TaskKind::Unknown(_) => f.write_str("unknown"),
-        }
+        self.serialize(f)
     }
 }
 
-#[derive(Clone, Copy, Default, Debug, PartialEq, Value)]
+#[derive(Clone, Copy, Default, Debug, PartialEq, Value, Serialize, Deserialize)]
 #[repr(i64)]
+#[serde(rename_all = "snake_case")]
 pub enum TaskStatus {
     #[default]
     Queued = 0,
@@ -41,6 +39,12 @@ pub enum TaskStatus {
     Succeeded = 2,
     Failed = 3,
     Unknown(i64),
+}
+
+impl std::fmt::Display for TaskStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.serialize(f)
+    }
 }
 
 #[derive(Clone, Default, Debug, FromRow, IntoRow)]
@@ -119,7 +123,7 @@ impl TaskStore {
         duration: Duration,
     ) -> Result<Option<Task>, Error> {
         if ctx.tx.is_some() {
-            return Err("cannot take task in transaction".into());
+            return Err("Cannot take task in transaction".into());
         }
         let mut tx = self.0.db().transaction(write_tx_options()).await?;
         let task = {

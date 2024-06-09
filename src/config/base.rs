@@ -40,6 +40,8 @@ pub struct Invoker {
     #[serde(default)]
     pub workers: u32,
     #[serde(default)]
+    pub temp_dir: PathBuf,
+    #[serde(default)]
     pub safeexec: Option<Safeexec>,
 }
 

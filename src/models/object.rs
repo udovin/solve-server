@@ -3,6 +3,7 @@ use std::fmt::Display;
 use crate::core::Error;
 use crate::db::builder::Expression;
 
+use serde::{Deserialize, Serialize};
 use solve_db::{FromRow, IntoRow, IntoValue, Row, Value};
 use solve_db_types::Instant;
 
@@ -64,8 +65,9 @@ pub trait Event: FromRow + IntoRow + Default + Clone + Send + Sync + 'static {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Value)]
+#[derive(Clone, Copy, Debug, PartialEq, Value, Serialize, Deserialize)]
 #[repr(i8)]
+#[serde(rename_all = "snake_case")]
 pub enum EventKind {
     Create = 1,
     Delete = 2,
@@ -75,12 +77,7 @@ pub enum EventKind {
 
 impl std::fmt::Display for EventKind {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            EventKind::Create => f.write_str("create"),
-            EventKind::Delete => f.write_str("delete"),
-            EventKind::Update => f.write_str("update"),
-            EventKind::Unknown(_) => f.write_str("unknown"),
-        }
+        self.serialize(f)
     }
 }
 

@@ -17,7 +17,7 @@ impl Instant {
 impl FromValue for Instant {
     fn from_value(value: &Value) -> Result<Self, Error> {
         let dt = DateTime::from_timestamp(value.parse()?, 0);
-        Ok(Self(dt.ok_or("cannot parse timestamp")?))
+        Ok(Self(dt.ok_or("Cannot parse Instant")?))
     }
 }
 
@@ -55,7 +55,7 @@ impl FromValue for JSON {
         Ok(Self(match value {
             Value::Text(v) => serde_json::from_str(v)?,
             Value::Blob(v) => serde_json::from_slice(v)?,
-            _ => return Err("cannot parse json".into()),
+            _ => return Err("Cannot parse JSON".into()),
         }))
     }
 }

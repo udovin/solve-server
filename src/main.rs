@@ -47,7 +47,7 @@ async fn invoker_main(config: Config, _args: InvokerArgs) -> Result<(), Error> {
         Some(v) => v,
         None => return Err("expected invoker section in config".into()),
     };
-    let invoker = Invoker::new(core, invoker_config);
+    let invoker = Invoker::new(core, invoker_config)?;
     tokio::spawn({
         let shutdown = shutdown.clone();
         async move {

@@ -8,7 +8,7 @@ use crate::config::Config;
 use crate::db::new_database;
 use crate::managers::files::{new_storage, FileManager};
 use crate::managers::tasks::TaskManager;
-use crate::models::{FileStore, SolutionStore, TaskStore};
+use crate::models::{FileStore, ProblemStore, SolutionStore, TaskStore};
 
 pub type Error = Box<dyn std::error::Error + Send + Sync>;
 
@@ -18,6 +18,7 @@ pub struct Core {
     // Stores.
     task_store: Arc<TaskStore>,
     file_store: Arc<FileStore>,
+    problem_store: Arc<ProblemStore>,
     solution_store: Arc<SolutionStore>,
     // Managers.
     task_manager: Option<Arc<TaskManager>>,
@@ -41,12 +42,14 @@ impl Core {
         let logger = slog::Logger::root(drain, slog::o!());
         let task_store = Arc::new(TaskStore::new(db.clone()));
         let file_store = Arc::new(FileStore::new(db.clone()));
+        let problem_store = Arc::new(ProblemStore::new(db.clone()));
         let solution_store = Arc::new(SolutionStore::new(db.clone()));
         Ok(Self {
             logger,
             db,
             task_store,
             file_store,
+            problem_store,
             solution_store,
             task_manager: None,
             file_manager: None,
@@ -57,34 +60,36 @@ impl Core {
         &self.logger
     }
 
-    pub fn db(&self) -> Arc<Database> {
-        self.db.clone()
+    pub fn db(&self) -> &Database {
+        &self.db
     }
 
-    pub fn task_store(&self) -> Arc<TaskStore> {
-        self.task_store.clone()
+    pub fn task_store(&self) -> &TaskStore {
+        &self.task_store
     }
 
-    pub fn file_store(&self) -> Arc<FileStore> {
-        self.file_store.clone()
+    pub fn file_store(&self) -> &FileStore {
+        &self.file_store
     }
 
-    pub fn solution_store(&self) -> Arc<SolutionStore> {
-        self.solution_store.clone()
+    pub fn problem_store(&self) -> &ProblemStore {
+        &self.problem_store
     }
 
-    pub fn task_manager(&self) -> Arc<TaskManager> {
+    pub fn solution_store(&self) -> &SolutionStore {
+        &self.solution_store
+    }
+
+    pub fn task_manager(&self) -> &TaskManager {
         self.task_manager
             .as_ref()
             .expect("Task manager is not initialized")
-            .clone()
     }
 
-    pub fn file_manager(&self) -> Arc<FileManager> {
+    pub fn file_manager(&self) -> &FileManager {
         self.file_manager
             .as_ref()
             .expect("File manager is not initialized")
-            .clone()
     }
 
     pub async fn init_server(&mut self, _config: &Config) -> Result<(), Error> {
@@ -98,7 +103,7 @@ impl Core {
     }
 
     fn init_task_manager(&mut self) -> Result<(), Error> {
-        self.task_manager = Some(Arc::new(TaskManager::new(self.task_store())));
+        self.task_manager = Some(Arc::new(TaskManager::new(self.task_store.clone())));
         Ok(())
     }
 
@@ -107,7 +112,10 @@ impl Core {
             .storage
             .as_ref()
             .expect("Storage config is not provided");
-        let file_manager = Arc::new(FileManager::new(new_storage(config)?, self.file_store()));
+        let file_manager = Arc::new(FileManager::new(
+            new_storage(config)?,
+            self.file_store.clone(),
+        ));
         self.file_manager = Some(file_manager);
         Ok(())
     }

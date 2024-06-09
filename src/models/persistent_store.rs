@@ -53,7 +53,7 @@ impl<O: Object> PersistentStore<O> {
         let row = match rows.next().await {
             Some(Ok(v)) => v,
             Some(Err(v)) => return Err(v),
-            None => return Err("empty query result".into()),
+            None => return Err("Empty query result".into()),
         };
         FromRow::from_row(&row)
     }
@@ -84,19 +84,26 @@ impl<O: Object> PersistentStore<O> {
         let row = match rows.next().await {
             Some(Ok(v)) => v,
             Some(Err(v)) => return Err(v),
-            None => return Err("empty query result".into()),
+            None => return Err("Empty query result".into()),
         };
         FromRow::from_row(&row)
     }
 
-    async fn delete_object(&self, tx: &mut impl Executor<'_>, id: O::Id) -> Result<(), Error> {
-        let query = Delete::new()
-            .with_table(&self.table)
-            .with_where(column(O::ID).equal(id.clone()));
+    async fn delete_object(
+        &self,
+        tx: &mut impl Executor<'_>,
+        id: O::Id,
+        predicate: Option<Predicate>,
+    ) -> Result<(), Error> {
+        let predicate = match predicate {
+            Some(v) => column(O::ID).equal(id.clone()).and(v),
+            None => column(O::ID).equal(id.clone()),
+        };
+        let query = Delete::new().with_table(&self.table).with_where(predicate);
         let status = tx.execute(query).await?;
         match status.rows_affected() {
             Some(1) => Ok(()),
-            _ => Err(format!("cannot delete object with id {}", id).into()),
+            _ => Err(format!("Cannot delete object with id: {}", id).into()),
         }
     }
 
@@ -119,7 +126,7 @@ impl<O: Object> PersistentStore<O> {
         let row = match rows.next().await {
             Some(Ok(v)) => v,
             Some(Err(v)) => return Err(v),
-            None => return Err("empty query result".into()),
+            None => return Err("Empty query result".into()),
         };
         FromRow::from_row(&row)
     }
@@ -241,7 +248,24 @@ impl<O: Object> ObjectStore for PersistentStore<O> {
 
     async fn delete(&self, mut ctx: Context<'_, '_>, id: O::Id) -> Result<Self::Event, Error> {
         if let Some(tx) = ctx.tx.take() {
-            self.delete_object(tx, id.clone()).await?;
+            self.delete_object(tx, id.clone(), None).await?;
+            let event = self.create_event(tx, BaseEvent::delete(id)).await?;
+            return Ok(event);
+        }
+        let mut tx = self.db.transaction(write_tx_options()).await?;
+        let event = self.delete(ctx.with_tx(&mut tx), id).await?;
+        tx.commit().await?;
+        Ok(event)
+    }
+
+    async fn delete_where(
+        &self,
+        mut ctx: Context<'_, '_>,
+        id: O::Id,
+        predicate: Predicate,
+    ) -> Result<Self::Event, Error> {
+        if let Some(tx) = ctx.tx.take() {
+            self.delete_object(tx, id.clone(), Some(predicate)).await?;
             let event = self.create_event(tx, BaseEvent::delete(id)).await?;
             return Ok(event);
         }
@@ -308,6 +332,15 @@ macro_rules! object_store_impl {
                 id: Self::Id,
             ) -> std::result::Result<Self::Event, $crate::core::Error> {
                 self.0.delete(ctx, id).await
+            }
+
+            async fn delete_where(
+                &self,
+                ctx: $crate::models::Context<'_, '_>,
+                id: Self::Id,
+                predicate: $crate::db::builder::Predicate,
+            ) -> std::result::Result<Self::Event, $crate::core::Error> {
+                self.0.delete_where(ctx, id, predicate).await
             }
         }
     };

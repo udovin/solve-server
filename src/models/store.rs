@@ -81,4 +81,11 @@ pub trait ObjectStore: Send {
     ) -> Result<Self::Event, Error>;
 
     async fn delete(&self, ctx: Context<'_, '_>, id: Self::Id) -> Result<Self::Event, Error>;
+
+    async fn delete_where(
+        &self,
+        ctx: Context<'_, '_>,
+        id: Self::Id,
+        predicate: Predicate,
+    ) -> Result<Self::Event, Error>;
 }

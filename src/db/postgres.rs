@@ -33,7 +33,7 @@ impl<'a> FromSql<'a> for WrapValue {
             Type::JSON => Value::Blob(raw.to_owned()),
             Type::JSONB => {
                 if raw.is_empty() || raw[0] != 1 {
-                    return Err("unsupported JSONB encoding version".into());
+                    return Err("Unsupported JSONB encoding version".into());
                 }
                 Value::Blob(raw[1..].to_owned())
             }
