@@ -1,5 +1,6 @@
 mod local_storage;
 
+use std::io::Read;
 use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
@@ -8,12 +9,17 @@ use std::time::Duration;
 
 use local_storage::LocalStorage;
 use solve_db_types::Instant;
-use tokio::io::AsyncRead;
 
 use crate::config::StorageConfig;
 use crate::core::Error;
 use crate::db::builder::{column, Select};
 use crate::models::{self, AsyncIter, Context, Event, FileMeta, FileStatus, ObjectStore};
+
+pub struct UploadResult {
+    pub size: u64,
+    pub md5: String,
+    pub sha3_224: String,
+}
 
 #[async_trait::async_trait]
 pub trait FileStorage: Send + Sync {
@@ -23,7 +29,7 @@ pub trait FileStorage: Send + Sync {
 
     async fn generate_key(&self) -> Result<String, Error>;
 
-    async fn upload(&self, key: &str, file: FileInfo) -> Result<(), Error>;
+    async fn upload(&self, key: &str, file: Pin<Box<dyn FileInfo>>) -> Result<UploadResult, Error>;
 
     async fn delete(&self, key: &str) -> Result<(), Error>;
 }
@@ -68,30 +74,15 @@ impl solve_cache::Store for FileStore {
     }
 }
 
-pub enum FileInfo {}
+#[async_trait::async_trait]
+pub trait FileInfo: Send + Sync {
+    fn name(&self) -> Option<String>;
 
-impl FileInfo {
-    pub fn name(&self) -> Option<String> {
-        None
-    }
+    fn size(&self) -> Option<u64>;
 
-    pub fn size(&self) -> Option<usize> {
-        None
-    }
+    fn path(&self) -> Option<PathBuf>;
 
-    pub fn path(&self) -> Option<PathBuf> {
-        None
-    }
-}
-
-impl AsyncRead for FileInfo {
-    fn poll_read(
-        self: Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &mut tokio::io::ReadBuf<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        todo!()
-    }
+    fn into_reader(self: Pin<Box<Self>>) -> Box<dyn Read + Send + Sync>;
 }
 
 type Cache = solve_cache::LruCache<String, PathBuf>;
@@ -134,11 +125,12 @@ impl FileManager {
         Ok(File { file, path })
     }
 
-    pub async fn upload(&self, file: FileInfo) -> Result<PendingFile, Error> {
+    pub async fn upload<T: FileInfo + 'static>(&self, file: T) -> Result<PendingFile, Error> {
         let key = self.storage.generate_key().await?;
         let meta = models::FileMeta {
             name: file.name().unwrap_or_default(),
             size: file.size(),
+            ..Default::default()
         };
         let mut model = models::File {
             status: models::FileStatus::Pending,
@@ -148,9 +140,17 @@ impl FileManager {
         };
         model.set_meta(&meta)?;
         let event = self.files.create(Context::new(), model).await?;
-        self.storage.upload(&key, file).await?;
+        let result = self.storage.upload(&key, Box::pin(file)).await?;
+        let new_meta = models::FileMeta {
+            size: Some(result.size),
+            md5: Some(result.md5),
+            sha3_224: Some(result.sha3_224),
+            ..meta
+        };
+        let mut model = event.into_object();
+        model.set_meta(&new_meta)?;
         Ok(PendingFile {
-            model: event.into_object(),
+            model,
             files: self.files.clone(),
         })
     }

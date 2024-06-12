@@ -1,7 +1,8 @@
+use std::io::Write as _;
 use std::sync::Arc;
 
 use slog::Logger;
-use tokio::io::AsyncWriteExt;
+use tokio::task::block_in_place;
 use tokio_util::sync::CancellationToken;
 
 use crate::core::Error;
@@ -48,9 +49,9 @@ impl JudgeSolutionTask {
             let file = self.invoker.file_manager().load(id).await?;
             tokio::fs::copy(file.path(), &source_path).await?;
         } else if let Some(content) = &solution.content {
-            let mut file = tokio::fs::File::create(&source_path).await?;
-            file.write_all(content.as_bytes()).await?;
-            file.flush().await?;
+            let mut file = block_in_place(|| std::fs::File::create(&source_path))?;
+            block_in_place(|| file.write_all(content.as_bytes()))?;
+            block_in_place(|| file.sync_all())?;
         }
         let binary_path = self.temp_dir.as_ref().unwrap().join(SOLUTION_BINARY_PATH);
         slog::debug!(

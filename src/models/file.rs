@@ -26,7 +26,9 @@ impl std::fmt::Display for FileStatus {
 #[derive(Clone, Default, Debug, Serialize, Deserialize)]
 pub struct FileMeta {
     pub name: String,
-    pub size: Option<usize>,
+    pub size: Option<u64>,
+    pub md5: Option<String>,
+    pub sha3_224: Option<String>,
 }
 
 impl std::fmt::Display for FileMeta {
