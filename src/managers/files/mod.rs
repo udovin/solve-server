@@ -1,7 +1,8 @@
 mod local_storage;
 
-use std::io::Read;
+use std::io::{Cursor, Read};
 use std::num::NonZeroUsize;
+use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::Arc;
@@ -74,7 +75,6 @@ impl solve_cache::Store for FileStore {
     }
 }
 
-#[async_trait::async_trait]
 pub trait FileInfo: Send + Sync {
     fn name(&self) -> Option<String>;
 
@@ -83,6 +83,70 @@ pub trait FileInfo: Send + Sync {
     fn path(&self) -> Option<PathBuf>;
 
     fn into_reader(self: Pin<Box<Self>>) -> Box<dyn Read + Send + Sync>;
+}
+
+pub struct MemoryFile {
+    bytes: Vec<u8>,
+    name: Option<String>,
+}
+
+impl MemoryFile {
+    pub fn new(bytes: Vec<u8>, name: Option<String>) -> Self {
+        MemoryFile { bytes, name }
+    }
+}
+
+impl FileInfo for MemoryFile {
+    fn name(&self) -> Option<String> {
+        self.name.clone()
+    }
+
+    fn path(&self) -> Option<PathBuf> {
+        None
+    }
+
+    fn size(&self) -> Option<u64> {
+        Some(self.bytes.len() as u64)
+    }
+
+    fn into_reader(mut self: Pin<Box<Self>>) -> Box<dyn Read + Send + Sync> {
+        Box::new(Cursor::new(std::mem::take(&mut self.bytes)))
+    }
+}
+
+pub struct LocalFile {
+    name: Option<String>,
+    path: PathBuf,
+    size: u64,
+}
+
+impl LocalFile {
+    pub fn new(path: PathBuf, name: Option<String>) -> Result<Self, Error> {
+        let meta = std::fs::metadata(&path)?;
+        Ok(LocalFile {
+            name,
+            path,
+            size: meta.size(),
+        })
+    }
+}
+
+impl FileInfo for LocalFile {
+    fn name(&self) -> Option<String> {
+        self.name.clone()
+    }
+
+    fn path(&self) -> Option<PathBuf> {
+        Some(self.path.clone())
+    }
+
+    fn size(&self) -> Option<u64> {
+        Some(self.size)
+    }
+
+    fn into_reader(self: Pin<Box<Self>>) -> Box<dyn Read + Send + Sync> {
+        unimplemented!()
+    }
 }
 
 type Cache = solve_cache::LruCache<String, PathBuf>;
