@@ -24,7 +24,6 @@ tokio = { version = "1.34.0", features = ["macros", "rt-multi-thread", "signal",
 tokio-postgres-rustls = "0.10.0"
 tokio-sqlite = "0.1.4"
 tokio-util = "0.7.10"
-warp = "0.3.6"
 solve-db = { path = "lib/solve-db" }
 solve-db-derive = { path = "lib/solve-db-derive" }
 solve-db-types = { path = "lib/solve-db-types" }
@@ -32,3 +31,4 @@ solve-cache = { path = "lib/solve-cache" }
 hashing-reader = "0.1.0"
 md-5 = "0.10.6"
 sha3 = "0.10.8"
+axum = "0.7.5"

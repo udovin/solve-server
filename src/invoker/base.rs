@@ -13,24 +13,6 @@ use crate::models::{ProblemStore, SolutionStore, TaskKind, TaskStatus};
 
 use super::tasks::{JudgeSolutionTask, TaskProcess, UpdateProblemPackageTask};
 
-pub struct TempDir(PathBuf);
-
-impl TempDir {
-    pub fn join<P: AsRef<Path>>(&self, path: P) -> PathBuf {
-        self.0.join(path)
-    }
-
-    pub fn as_path(&self) -> &Path {
-        self.0.as_path()
-    }
-}
-
-impl Drop for TempDir {
-    fn drop(&mut self) {
-        drop(blocking_await(tokio::fs::remove_dir_all(&self.0)));
-    }
-}
-
 pub struct Invoker {
     core: Arc<Core>,
     workers: u32,
@@ -183,5 +165,23 @@ impl Invoker {
             TaskKind::UpdateProblemPackage => Box::new(UpdateProblemPackageTask::new(self)),
             TaskKind::Unknown(v) => return Err(format!("Unknown task kind: {}", v).into()),
         })
+    }
+}
+
+pub struct TempDir(PathBuf);
+
+impl TempDir {
+    pub fn join<P: AsRef<Path>>(&self, path: P) -> PathBuf {
+        self.0.join(path)
+    }
+
+    pub fn as_path(&self) -> &Path {
+        self.0.as_path()
+    }
+}
+
+impl Drop for TempDir {
+    fn drop(&mut self) {
+        drop(blocking_await(tokio::fs::remove_dir_all(&self.0)));
     }
 }

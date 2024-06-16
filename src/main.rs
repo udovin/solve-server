@@ -1,9 +1,13 @@
+use std::net::IpAddr;
 use std::sync::Arc;
 
+use axum::{routing, Router};
 use clap::Parser;
 use solve::config::{parse_file, Config};
 use solve::core::{Core, Error};
 use solve::invoker::Invoker;
+use solve::server::Server;
+use tokio::net::TcpListener;
 use tokio_util::sync::CancellationToken;
 
 #[derive(clap::Args)]
@@ -30,12 +34,35 @@ struct Cli {
     command: Command,
 }
 
+async fn ping() -> &'static str {
+    "pong"
+}
+
 async fn server_main(config: Config, _args: ServerArgs) -> Result<(), Error> {
-    let _shutdown = CancellationToken::new();
+    let shutdown = CancellationToken::new();
     let mut core = Core::new(&config)?;
     core.init_server(&config).await?;
-    let _core = Arc::new(core);
-    todo!()
+    let core = Arc::new(core);
+    let server_config = match &config.server {
+        Some(v) => v,
+        None => return Err("Expected server section in config".into()),
+    };
+    let server = Server::new(core, server_config)?;
+    tokio::spawn({
+        let shutdown = shutdown.clone();
+        async move {
+            tokio::signal::ctrl_c()
+                .await
+                .expect("Failed to listen for ctrl_c");
+            shutdown.cancel();
+        }
+    });
+    let router = Router::new().route("/ping", routing::get(ping));
+    let addr = format!("{}:{}", server_config.host, server_config.port);
+    let listener = TcpListener::bind(addr).await?;
+    Ok(axum::serve(listener, router)
+        .with_graceful_shutdown(shutdown.cancelled_owned())
+        .await?)
 }
 
 async fn invoker_main(config: Config, _args: InvokerArgs) -> Result<(), Error> {
@@ -45,7 +72,7 @@ async fn invoker_main(config: Config, _args: InvokerArgs) -> Result<(), Error> {
     let core = Arc::new(core);
     let invoker_config = match &config.invoker {
         Some(v) => v,
-        None => return Err("expected invoker section in config".into()),
+        None => return Err("Expected invoker section in config".into()),
     };
     let invoker = Invoker::new(core, invoker_config)?;
     tokio::spawn({
@@ -53,7 +80,7 @@ async fn invoker_main(config: Config, _args: InvokerArgs) -> Result<(), Error> {
         async move {
             tokio::signal::ctrl_c()
                 .await
-                .expect("failed to listen for ctrl_c");
+                .expect("Failed to listen for ctrl_c");
             shutdown.cancel();
         }
     });
