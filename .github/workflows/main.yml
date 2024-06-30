@@ -28,13 +28,27 @@ jobs:
         components: llvm-tools-preview
     - name: Install cargo-llvm-cov
       run: cargo install cargo-llvm-cov
+    - name: Setup Cgroup
+      run: |
+        sudo mkdir -p $TEST_CGROUP_PATH/test.scope
+        sudo chown -R $(id -u):$(id -g) $TEST_CGROUP_PATH
+        sudo usermod --add-subuids 100000-165536 --add-subgids 100000-165536 $(id -un)
+      env:
+        TEST_CGROUP_PATH: /sys/fs/cgroup/solve.slice
     - name: Run test coverage
       run: |
+        sudo bash -c "echo -n $$ >$TEST_CGROUP_PATH/test.scope/cgroup.procs"
         cargo llvm-cov clean --workspace
         cargo llvm-cov --lcov --output-path ./coverage.lcov
       env:
         POSTGRES_HOST: localhost
         POSTGRES_PORT: 5432
+        TEST_CGROUP_PATH: /sys/fs/cgroup/solve.slice
+    - name: Cleanup Cgroup
+      run: |
+        sudo rmdir $TEST_CGROUP_PATH/test.scope $TEST_CGROUP_PATH
+      env:
+        TEST_CGROUP_PATH: /sys/fs/cgroup/solve.slice
     - name: Upload results to Codecov
       uses: codecov/codecov-action@v3
       env:

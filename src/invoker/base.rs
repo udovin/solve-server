@@ -11,10 +11,12 @@ use crate::managers::files::FileManager;
 use crate::managers::tasks::Task;
 use crate::models::{ProblemStore, SolutionStore, TaskKind, TaskStatus};
 
+use super::safeexec;
 use super::tasks::{JudgeSolutionTask, TaskProcess, UpdateProblemPackageTask};
 
 pub struct Invoker {
     core: Arc<Core>,
+    safeexec: Option<safeexec::Manager>,
     workers: u32,
     temp_dir: PathBuf,
     counter: AtomicUsize,
@@ -24,8 +26,16 @@ impl Invoker {
     pub fn new(core: Arc<Core>, config: &config::Invoker) -> Result<Self, Error> {
         std::fs::remove_dir_all(&config.temp_dir)?;
         std::fs::create_dir_all(&config.temp_dir)?;
+        let safeexec = match &config.safeexec {
+            Some(safeexec_config) => Some(safeexec::Manager::new(
+                &config.temp_dir,
+                &safeexec_config.cgroup,
+            )?),
+            None => None,
+        };
         Ok(Self {
             core,
+            safeexec,
             workers: config.workers,
             temp_dir: config.temp_dir.clone(),
             counter: AtomicUsize::default(),

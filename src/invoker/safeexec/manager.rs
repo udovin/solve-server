@@ -1,10 +1,11 @@
-use std::fs::File;
+use std::fs::{create_dir, File};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicI64, Ordering};
 use std::time::Duration;
 
 use path_clean::PathClean;
+use sbox::{BaseMounts, BinNewIdMapper, Cgroup, Container, Gid, OverlayMount, Uid};
 
 use crate::core::Error;
 
@@ -24,7 +25,8 @@ pub struct ProcessConfig {
 pub struct Manager {
     #[allow(unused)]
     storage_path: PathBuf,
-    manager: sbox::Manager,
+    user_mapper: BinNewIdMapper,
+    cgroup: Cgroup,
     counter: AtomicI64,
 }
 
@@ -36,50 +38,65 @@ impl Manager {
         cgroup_path: impl Into<PathBuf>,
     ) -> Result<Self, Error> {
         let cgroup_path = cgroup_path.into();
-        let cgroup_path = if cgroup_path.is_absolute() {
-            PathBuf::from(CGROUP_FS_PATH).join(cgroup_path.strip_prefix("/")?)
+        let cgroup = if cgroup_path.is_absolute() {
+            Cgroup::new(CGROUP_FS_PATH, cgroup_path.strip_prefix("/")?)?
         } else {
             // We use the parent cgroup of the current process because we cannot
             // create a child cgroup in a cgroup with any attached process.
-            PathBuf::from(CGROUP_FS_PATH)
-                .join(
-                    Self::get_current_cgroup()?
-                        .parent()
-                        .ok_or("Cannot find parent cgroup")?,
-                )
-                .join(cgroup_path)
+            Cgroup::current()?
+                .parent()
+                .ok_or("Cannot get parent cgroup")?
+                .child(cgroup_path)?
         };
-        let cgroup_path = cgroup_path.clean();
-        assert!(cgroup_path.starts_with(CGROUP_FS_PATH));
+        cgroup
+            .create()
+            .map_err(|err| format!("Cannot create cgroup: {err}"))?;
         let storage_path = storage_path.into().clean();
         assert!(storage_path.is_absolute());
-        Self::setup_cgroup(&cgroup_path).map_err(|err| format!("cannot setup cgroup: {}", err))?;
+        Self::setup_cgroup(cgroup.as_path())
+            .map_err(|err| format!("cannot setup cgroup: {}", err))?;
         std::fs::create_dir_all(&storage_path)?;
-        let user_mapper = sbox::NewIdMap::default();
-        let manager = sbox::Manager::new(&storage_path, &cgroup_path, user_mapper)
-            .map_err(|v| v.to_string())?;
+        let user_mapper = BinNewIdMapper::new_root_subid(Uid::current(), Gid::current()).unwrap();
         Ok(Self {
             storage_path,
-            manager,
+            user_mapper,
+            cgroup,
             counter: AtomicI64::new(0),
         })
     }
 
     pub fn create_process(&self, config: ProcessConfig) -> Result<Process, Error> {
         let name = self.counter.fetch_add(1, Ordering::SeqCst).to_string();
-        let container = self
-            .manager
-            .create_container(
-                format!("safeexec-{name}"),
-                sbox::ContainerConfig {
-                    layers: config.layers.clone(),
-                    hostname: "safeexec".into(),
-                },
-            )
-            .map_err(|v| v.to_string())?;
+        let state_path = self.storage_path.join(format!("sandbox-{name}"));
+        create_dir(&state_path)?;
+        let upper_path = state_path.join("upper");
+        create_dir(&upper_path)?;
+        let work_path = state_path.join("work");
+        create_dir(&work_path)?;
+        let rootfs = state_path.join("rootfs");
+        create_dir(&rootfs)?;
+        let cgroup = self.cgroup.child(format!("sandbox-{name}"))?;
+        cgroup.create()?;
+        let user_mapper = self.user_mapper.clone();
+        let container = Container::options()
+            .user_mapper(user_mapper.clone())
+            .cgroup(cgroup.clone())
+            .add_mount(OverlayMount::new(
+                config.layers.clone(),
+                upper_path,
+                work_path,
+            ))
+            .add_mount(BaseMounts::new())
+            .rootfs(rootfs)
+            .hostname("sandbox")
+            .create()?;
         Ok(Process {
             config,
-            container: Some(container),
+            container,
+            state_path,
+            user_mapper,
+            cgroup,
+            shutdown: None,
             join_handle: None,
         })
     }
@@ -102,21 +119,5 @@ impl Manager {
             subtree_file.write_all(data.as_bytes())?;
         }
         Ok(())
-    }
-
-    fn get_current_cgroup() -> Result<PathBuf, Error> {
-        let content = std::fs::read("/proc/self/cgroup")?;
-        for line in content.split(|c| *c == b'\n').filter(|v| !v.is_empty()) {
-            let line = std::str::from_utf8(line)?;
-            let parts: Vec<_> = line.split(|c| c == ':').collect();
-            if parts.len() < 3 {
-                return Err(format!("Invalid cgroup line: {}", line).into());
-            }
-            if parts[1].is_empty() {
-                let name = parts[2].trim_start_matches('/');
-                return Ok(PathBuf::from(name));
-            }
-        }
-        Err("Cannot find cgroup path".into())
     }
 }
