@@ -16,6 +16,7 @@ use super::tasks::{JudgeSolutionTask, TaskProcess, UpdateProblemPackageTask};
 
 pub struct Invoker {
     core: Arc<Core>,
+    #[allow(unused)]
     safeexec: Option<safeexec::Manager>,
     workers: u32,
     temp_dir: PathBuf,

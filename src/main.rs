@@ -46,6 +46,7 @@ async fn server_main(config: Config, _args: ServerArgs) -> Result<(), Error> {
         Some(v) => v,
         None => return Err("Expected server section in config".into()),
     };
+    #[allow(unused)]
     let server = Server::new(core, server_config)?;
     tokio::spawn({
         let shutdown = shutdown.clone();
